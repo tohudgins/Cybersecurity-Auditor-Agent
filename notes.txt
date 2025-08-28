@@ -1,0 +1,13 @@
+Frameworks:
+- NIST Cybersecurity Framework
+- CIS Controls 8.1
+- MITRE Attack
+- OWASP ASVS
+
+Agentic System Structure:
+- Vector Knowledge Database of Framework documents
+- Can also utilize a knowledge graph with Framework documents
+1. Compliance Agent answers general GRC questions (Agentic RAG with Framework Documents)
+2. Audit Agent can perform a general audit or critique given user data such as logs, pdfs or description
+4. Reporting Agent returns an answer to the user synthesizing results from the other agents
+
