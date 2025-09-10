@@ -1,2 +1,6 @@
 .env
-
+.chromadb/chroma.sqlite3
+.chromadb/f6ec9f38-95b6-4511-a305-00e21cee0f65/data_level0.bin
+.chromadb/f6ec9f38-95b6-4511-a305-00e21cee0f65/header.bin
+.chromadb/f6ec9f38-95b6-4511-a305-00e21cee0f65/length.bin
+.chromadb/f6ec9f38-95b6-4511-a305-00e21cee0f65/link_lists.bin
