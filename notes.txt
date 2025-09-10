@@ -5,7 +5,7 @@ Frameworks:
 - OWASP ASVS
 
 Agentic System Structure:
-- Vector Knowledge Database of Framework documents
+- Vector Knowledge Database of Framework documents for querying questions using RAG
 - Can also utilize a knowledge graph with Framework documents
 - Train Agent on documents of cybersecurity audits
 1. Compliance Agent answers general GRC questions (Agentic RAG with Framework Documents)
