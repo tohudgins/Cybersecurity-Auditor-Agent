@@ -11,3 +11,10 @@ Agentic System Structure:
 2. Audit Agent can perform a general audit or critique given user data such as logs, pdfs or description
 4. Reporting Agent returns an answer to the user synthesizing results from the other agents
 
+Tech Stack:
+- LangGraph for agentic AI system graph architecture
+- Local Ollama models for llm and embedding
+    - gpt-oss for general reasoning and agent llm
+    - nomic-embed-text for vector embeddingg
+- Chroma DB for vector store
+- 
