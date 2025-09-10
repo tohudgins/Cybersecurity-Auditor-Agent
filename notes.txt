@@ -18,4 +18,3 @@ Tech Stack:
     - gpt-oss for general reasoning and agent llm
     - nomic-embed-text for vector embeddingg
 - Chroma DB for vector store
-- 
