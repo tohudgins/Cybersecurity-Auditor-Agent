@@ -21,29 +21,29 @@ def load_pdfs_from_directory(directory_path):
     # Initialize ChromaDB client
     client = PersistentClient(path=".chromadb/")
 
-    # Create or get existing collection
+    # Create new chroma collection called Cybersecurity_Frameworks
     collection = client.get_or_create_collection(name="Cybersecurity_Frameworks")
 
-    # Initialize OpenAI embeddings
+    # Initialize Ollama embeddings using model nomic-embed-text
     embeddings = OllamaEmbeddings(model="nomic-embed-text")
 
+    # List to hold all documents
     documents = []
 
+    # List all PDF files in the directory
     pdf_files = [f for f in os.listdir(directory_path) if f.endswith('.pdf')]
 
     # Process each PDF in the directory
-    for filename in tqdm(pdf_files, desc="Embedding PDFs"):
-        if filename.endswith(".pdf"):
-            file_path = os.path.join(directory_path, filename)
-            reader = PdfReader(file_path)
-            text = ""
-            for page in reader.pages:
-                text += page.extract_text() or ""
+    for pdf_file in tqdm(pdf_files, desc="Processing PDFs"):
+        reader = PdfReader(f'data/{pdf_file}')
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() or ""
 
-            doc = Document(page_content=text, metadata={"source": filename})
-            documents.append(doc)
+        doc = Document(page_content=text, metadata={"source": pdf_file})
+        documents.append(doc)
             
-            # Embed and add to ChromaDB collection
+    # Embed and add to ChromaDB collection in chromadb directory
     if documents:
         Chroma.from_documents(
         documents, 
@@ -52,7 +52,6 @@ def load_pdfs_from_directory(directory_path):
         client=client
         )
             
-
     print("PDFs loaded and embedded into ChromaDB.")
 
 if __name__ == "__main__":
