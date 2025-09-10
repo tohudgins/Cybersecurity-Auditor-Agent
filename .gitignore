@@ -1,6 +1,4 @@
 .env
-notes.txt
-vector_processing.py
 .chromadb/ec7b4e8f-0b9f-4276-b88d-6a5ebcdc1198/link_lists.bin
 .chromadb/ec7b4e8f-0b9f-4276-b88d-6a5ebcdc1198/length.bin
 .chromadb/ec7b4e8f-0b9f-4276-b88d-6a5ebcdc1198/header.bin
