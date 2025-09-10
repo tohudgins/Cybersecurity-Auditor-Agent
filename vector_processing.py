@@ -22,7 +22,7 @@ def load_pdfs_from_directory(directory_path):
     client = PersistentClient(path=".chromadb/")
 
     # Create new chroma collection called Cybersecurity_Frameworks
-    collection = client.get_or_create_collection(name="Cybersecurity_Frameworks")
+    client.get_or_create_collection(name="Cybersecurity_Frameworks")
 
     # Initialize Ollama embeddings using model nomic-embed-text
     embeddings = OllamaEmbeddings(model="nomic-embed-text")
