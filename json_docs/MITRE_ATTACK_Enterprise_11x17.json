@@ -1,0 +1,82 @@
+[
+  {
+    "chunk_id": 0,
+    "content": "Use ATT&CK for Cyber Threat Intelligence\nCyber threat intelligence comes from many sources, including knowledge \nof past incidents, commercial threat feeds, information-sharing groups, \ngovernment threat-sharing programs, and more. ATT&CK gives analysts \na common language to communicate across reports and organizations, \nproviding a way to structure, compare, and analyze threat intelligence.\nUse ATT&CK to Build Your Defensive Platform\n \nATT&CK includes resources designed to help cyber defenders develop \nanalytics that detect the techniques used by an adversary. Based on \nthreat intelligence included in ATT&CK or provided by analysts, cyber \ndefenders can create a comprehensive set of analytics to detect threats.Use ATT&CK for Adversary Emulation and Red Teaming\nThe best defense is a well-tested defense. ATT&CK provides a common \nadversary behavior framework based on threat intelligence that red teams\ncan use to emulate specific threats. This helps cyber defenders find gaps in",
+    "metadata": {
+      "source": "MITRE_ATTACK_Enterprise_11x17.pdf",
+      "chunk_index": 0
+    }
+  },
+  {
+    "chunk_id": 1,
+    "content": "can use to emulate specific threats. This helps cyber defenders find gaps in \nvisibility, defensive tools and processes—and then fix them.No matter how strong your patching, compliance and security software, \na determined cyber adversary can typically find a way into your network. \nBut how did the attacker get in? How are they moving around? And how \ncan you use that knowledge to detect, mitigate and prevent future \nattacks? The MITRE ATT&CK™ framework answers those questions by \nproviding a globally accessible knowledge base of adversary tactics and \ntechniques that are based on real-world observations of adversaries’ \noperations against computer networks. Armed with this knowledge, \norganizations and security vendors can work toward improving detection \nand prevention methods. \nPioneering with the Cyber Community for \nCollaborative Defense\nATT&CK was first created by a MITRE internal research program using \nour own data and operations. Now based on published, open source",
+    "metadata": {
+      "source": "MITRE_ATTACK_Enterprise_11x17.pdf",
+      "chunk_index": 1
+    }
+  },
+  {
+    "chunk_id": 2,
+    "content": "our own data and operations. Now based on published, open source \nthreat information, MITRE provides the framework as a resource to the \ncyber community. Anyone is free to leverage it, and everyone is free to \nuse and contribute to ATT&CK. \nBy making the ATT&CK knowledge base globally accessible, MITRE \nsupports a growing community that is fostering innovation in open \nsource tools, products and services based on the framework. ATT&CK is \nexperiencing significant growth across the cybersecurity community, with \nwide adoption from industry, government and security vendors including \norganizations like Microsoft, IBM, USAA, JPMorgan Chase, and Palo Alto. \nWith the creation of ATT&CK, MITRE is partnering with the cyber \ncommunity to fulfill its mission to solve problems for a safer world.Using Adversary Behavior to\nStrengthen Cyber DefenseGet Started with ATT&CK\nJoin the ATT&CK Community\nMITRE encourages other researchers, analysts and cyber defenders to join",
+    "metadata": {
+      "source": "MITRE_ATTACK_Enterprise_11x17.pdf",
+      "chunk_index": 2
+    }
+  },
+  {
+    "chunk_id": 3,
+    "content": "Join the ATT&CK Community\nMITRE encourages other researchers, analysts and cyber defenders to join \nour community and contribute new techniques and information.\nFinding Gaps in Defense\nComparing APT 28 to Deep Panda\nMITRE ATT&CK Resources\nattack.mitre.org \n  •  Access ATT&CK technical information\n  •  Contribute to ATT&CK\n  •  Follow our blog \n  •  Watch ATT&CK presentations\n         @MITREattack\nFollow us on Twitter for the latest news.attack.mitre.org \nThe MITRE ATT&CK™\nEnterprise Framework\nattack.mitre.org\n© 2019 The MITRE Corporation. All rights reserved. Approved for Public Release; Distribution Unlimited. Case Number 15-1288. Ini�al Access Execu�on Persistence Privilege Escala�on Defens e Evasion Creden�alAccess Discover y Lateral Movem ent Collec�on Exﬁltra�on Command and Control\nValid Accounts Schedule d Task XSL Script Proce ssing Network Sniﬃng Windows Remote \nManagementVideo Capture Schedule d Transfer Web Service",
+    "metadata": {
+      "source": "MITRE_ATTACK_Enterprise_11x17.pdf",
+      "chunk_index": 3
+    }
+  },
+  {
+    "chunk_id": 4,
+    "content": "ManagementVideo Capture Schedule d Transfer Web Service\nTruste d Rela�ons hip Trap Proce ss Injec�on Two-Factor Authen�ca�on \nIntercep�onSystem Time Discovery Screen Capture Exﬁltra�on Over \nPhysical MediumUncommo nly Used Port\nSupply Chain Compromise LSASS Driver Extra Window Memory Injec�on System Service Discovery Third-party So�ware Man in the Browse r Standard Non-Applica�on \nLayer Protocol Spearphish ing via Service Local Job Scheduling Bypass User Account Con trol Private Keys System Owne r/Use r \nDiscoveryTaint Shar ed Content Input Capt ure Exﬁltra�on Over Comman d \nand Control Chan nel Spearphish ing Link Launchctl Access Token Manipula�on Password Filter DLL SSH Hijacki ng Email Collec�on Standard Applica�on \nLayer Protocol Spearphish ing A�achment XSL Script Proce ssing Valid Accounts LLMNR/NBT-NS Poisoning System Network\nConﬁgura�on DiscoveryShared Webroot Data Staged Data Transfer Size Limits\nReplica�on Through\nRemovable MediaWindows Remote",
+    "metadata": {
+      "source": "MITRE_ATTACK_Enterprise_11x17.pdf",
+      "chunk_index": 4
+    }
+  },
+  {
+    "chunk_id": 5,
+    "content": "Replica�on Through\nRemovable MediaWindows Remote\nManagementPlist Modiﬁca�on Keycha in Replica�on Through \nRemovable MediaData from Removable Media Data Encrypted Remote Access Tools\nImage File Execu�on Op�ons  Injec�on Kerberoas�ng Secur ity So�ware Discovery Data from Network \nShared DriveData Compressed Port Knocking\nExploit Public -Facing\nApplica�onUser Execu�on DLL Search Orde r Hijacking Input Prompt Remote System Discovery Remote File Cop y Automated Exﬁltra�on Mul�lay er Encryp�on\nTruste d Develope r U�li� es Web Shell Web Service Input Capt ure Query Registry Remote Desktop Protocol Data from Informa�on \nRepositoriesExﬁltra�on Over Other \nNetwork MediumMul�band Communic a�on\nHardwar e Add i�ons Third-party So�ware Startup  Items Truste d Develope r U�li� es Hooking Proce ss Discovery Pass the Ticket Mul�-Stage Chan nels",
+    "metadata": {
+      "source": "MITRE_ATTACK_Enterprise_11x17.pdf",
+      "chunk_index": 5
+    }
+  },
+  {
+    "chunk_id": 6,
+    "content": "Drive-by Compromise Space  a�er Filename Setuid and Setgid Timestomp Forced Authen�ca�on Permission Group s Discovery Pass the Hash Automated Collec�on Exﬁltra�on Over \nAlterna�ve ProtocolMul�-hop Proxy\nSource Service Registry Permissions Weakness Template Injec�on Exploita�on for\nCreden�al AccessPeripheral Device Discovery Logon Scripts Audio Capture Fallback  Channels\nSigned Script\nProxy  Execu�onPort Monitors Space  a�er Filename Password Policy Discovery Exploita�on of \nRemote ServicesData from Local System Domain Fron� ng\nPath Intercep�on So�ware Packing Creden�als in Files Network Shar e Discovery Clipboar d Data Data Obfusca�on\nService Exe cu�on New Se rvice SIP and Trust \nProvider Hijacki ngCreden�al Dumping Network Service Sc anning Applica�on Deployment \nSo�wareData Encoding\nScrip�ng Launch Daemon Brute Force File and Direct ory Discovery Custo m Cryptographic \nProtocol Rundll32 Hooking Signed Binary",
+    "metadata": {
+      "source": "MITRE_ATTACK_Enterprise_11x17.pdf",
+      "chunk_index": 6
+    }
+  },
+  {
+    "chunk_id": 7,
+    "content": "Protocol Rundll32 Hooking Signed Binary \nProxy  Execu�onBash History Browse r Bookmark Di scovery Windows Admin Shares\nRegsvr32 File System Permissions Weakness Account Manipula�on Applica�on Window \nDiscoveryRemote Services Connec�on Proxy\nRegsvcs/Regasm Dylib Hijacki ng Rundll32 Secur ityd Memory Distributed Component \nObject Mode lCommunic a�on Through\nRemovable Media PowerShell Applica�on Shimmi ng Rootki t Creden�als in Registry System Network \nConnec�ons  Discovery Mshta AppInit DLLs Regsvr32 Apple Script Standard Cryptographic \nProtocol InstallU�l AppCert DLLs Regsvcs/Regasm System Informa�on \nDiscovery Graphical User Interface Accessibility Features Redundant Access Remote File Cop y\nExploita�on for \nClient Execu�onWinlogon Helper DLL Sudo Cac hing Proce ss Hollowing Account Disc overy Custo m Comman d and\nControl P rotocolWindows Management\nInstrumenta�on\nEvent Sub scrip�onSudo Proce ss Dopp elganging\nExecu�on through API SID-History Injec�on Port Knocking Commo nly Used Port",
+    "metadata": {
+      "source": "MITRE_ATTACK_Enterprise_11x17.pdf",
+      "chunk_index": 7
+    }
+  },
+  {
+    "chunk_id": 8,
+    "content": "Execu�on through API SID-History Injec�on Port Knocking Commo nly Used Port\nDynamic Data Exchange Exploita�on for\nPrivilege Escala�onObfuscated Files\nor In forma�on Control Panel Items SIP and Trust Provider\nHijacking Compiled HTML File Network Shar e\nConnec�on Removal Comman d-Line Interface Secur ity Sup port Provider\nCMSTP Screensaver Modify Registry\nApple Script Registry Run\nKeys / Startup  FolderMasquerading\nWindows Management\nInstrumenta�onLC_MA IN Hijacki ng\nRe-opened Applic a�ons Launchctl\nSigned Binary\nProxy  Execu�onRc.commo n InstallU�l\nPort Knocking Install Root  Cer�ﬁcate\nExecu�on through\nModule  LoadOﬃce Applic a�on Startup Indirect  Comman d Execu�on\nNetsh Helper DLL Component Firmware\nModify Exis�ng Service Indicator Removal from Tools\nLogon Scripts Indicator Blocking\nLogin Item HISTCONTROL\nLC_LOAD_DYLIB Addi�on Hidden Window\nLaunch Agent Hidden Users\nKernel Module s\nand ExtensionsHidden Files and Direct ories\nGatekeeper Bypass",
+    "metadata": {
+      "source": "MITRE_ATTACK_Enterprise_11x17.pdf",
+      "chunk_index": 8
+    }
+  },
+  {
+    "chunk_id": 9,
+    "content": "Kernel Module s\nand ExtensionsHidden Files and Direct ories\nGatekeeper Bypass\nHidden Files and Direct ories File System Logical Oﬀsets\nExternal Remote Services File Permissions Modiﬁca�on\nCreate Account File Dele�on\nComponent Object Mode l\nHijackingExploita�on for\nDefense Evasion\nChange Default\nFile Assoc ia�onDisabling Secur ity Tools\nDeobfuscate/Decode Files\nor In forma�on Bootki t\nBITS Jobs Control Panel Items\nAuthen�ca�on Package Component Object\nModel Hijacki ng Account Manipula�on\n.bash_proﬁle and .bashrc Compiled HTML File\nTime Providers Code Signing\nSystem Firmware CMSTP\nShortcut Modiﬁca�on Clear Com mand History\nRedundant Access BITS Jobs\nHypervisor Signed Script Proxy  Execu�on\nComponent Firmware Scrip�ng\nBrowse r Extensions NTFS File A�ributes\nMshta\nIndicator Removal on Host\nDLL Side-Loading\nDCShadow",
+    "metadata": {
+      "source": "MITRE_ATTACK_Enterprise_11x17.pdf",
+      "chunk_index": 9
+    }
+  }
+]
