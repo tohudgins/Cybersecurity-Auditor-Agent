@@ -1,29 +1,17 @@
-"""
-Tyler Hudgins
-9/12/2025
-vector_preprocessing.py
-
-Preprocesses Cybersecurity GRC PDFs:
-1. Extracts text from PDFs in 'data' directory
-2. Chunks each PDF and optionally saves as JSON
-3. Embeds Documents in ChromaDB for vector search
-4. Uses GPT-5-nano to extract entities/relations into Neo4j
-5. Creates semantic similarity edges between chunks
-"""
-
 import os
 import json
+import asyncio
 import numpy as np
-from tqdm import tqdm
 from pypdf import PdfReader
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
-from neo4j import GraphDatabase
+from neo4j import AsyncGraphDatabase
 from dotenv import load_dotenv
 from sklearn.metrics.pairwise import cosine_similarity
-from openai import OpenAI
+from openai import AsyncOpenAI
+from tqdm import tqdm
 
 load_dotenv()
 
@@ -37,42 +25,44 @@ CHROMA_COLLECTION = "Cybersecurity_Frameworks"
 CHUNK_SIZE = 2000
 CHUNK_OVERLAP = 200
 SIMILARITY_THRESHOLD = 0.6
+CONCURRENCY_LIMIT = 15  # GPT calls at once
 
-# Neo4j
 NEO4J_URI = "bolt://localhost:7687"
 NEO4J_USER = "neo4j"
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 
-# OpenAI
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Async OpenAI client
+client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# Neo4j async driver
+driver = AsyncGraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
+
+# Semaphore for GPT concurrency
+sem = asyncio.Semaphore(CONCURRENCY_LIMIT)
 
 # -------------------------
 # PDF Loading & Chunking
 # -------------------------
 def load_pdfs(directory_path):
-    pdf_files = [f for f in os.listdir(directory_path) if f.endswith('.pdf')]
+    pdf_files = [f for f in os.listdir(directory_path) if f.endswith(".pdf")]
     documents = []
     for pdf_file in tqdm(pdf_files, desc="Loading PDFs"):
         reader = PdfReader(os.path.join(directory_path, pdf_file))
         text = "".join([page.extract_text() or "" for page in reader.pages])
-        doc = Document(page_content=text, metadata={"source": pdf_file})
-        documents.append(doc)
+        documents.append(Document(page_content=text, metadata={"source": pdf_file}))
     return documents
 
 def save_documents_as_json(documents, output_dir=JSON_DIR):
     os.makedirs(output_dir, exist_ok=True)
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-    for doc in tqdm(documents, desc="Chunking and saving PDFs as JSON"):
+    for doc in tqdm(documents, desc="Saving JSON chunks"):
         chunks = splitter.split_documents([doc])
         formatted_chunks = []
         for idx, chunk in enumerate(chunks):
             formatted_chunks.append({
                 "chunk_id": idx,
                 "content": chunk.page_content,
-                "metadata": {
-                    "source": doc.metadata["source"],
-                    "chunk_index": idx
-                }
+                "metadata": {"source": doc.metadata["source"], "chunk_index": idx}
             })
         out_path = os.path.join(output_dir, f"{os.path.splitext(doc.metadata['source'])[0]}.json")
         with open(out_path, "w", encoding="utf-8") as f:
@@ -82,107 +72,130 @@ def save_documents_as_json(documents, output_dir=JSON_DIR):
 # Chroma Embeddings
 # -------------------------
 def embed_to_chromadb(documents):
-    chunked_docs = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100).split_documents(documents)
+    print("Embedding documents into ChromaDB...")
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+    chunks = splitter.split_documents(documents)
     embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small")
     vectordb = Chroma(
         collection_name=CHROMA_COLLECTION,
         embedding_function=embeddings_model,
         persist_directory=CHROMA_DIR
     )
-    vectordb.add_documents(chunked_docs)
-    print(f"Embedded {len(chunked_docs)} documents into ChromaDB at {CHROMA_DIR}")
-
-def get_embeddings(chunks):
-    response = client.embeddings.create(
-        model="text-embedding-3-small",
-        input=[chunk.page_content for chunk in chunks]
-    )
-    return [item.embedding for item in response.data]
+    vectordb.add_documents(chunks)
+    # store embeddings in chunk metadata
+    for i, chunk in enumerate(chunks):
+        chunk.metadata['embedding'] = embeddings_model.embed_documents([chunk.page_content])[0]
+    print(f"Embedded {len(chunks)} chunks into ChromaDB at {CHROMA_DIR}")
+    return chunks
 
 # -------------------------
-# Entity & Relation Extraction (GPT-5-nano)
+# Async GPT-5-nano extraction
 # -------------------------
-def extract_entities_relations(chunk_text):
-    prompt = f"""
-    Extract cybersecurity-specific entities and relations from the following text.
-    Return JSON with "entities" and "relations".
-    
-    Entities = list of {{"text": "...", "label": "..."}}
-    Relations = list of {{"source": "...", "target": "...", "type": "..."}}
+async def extract_entities_relations_async(chunk_text):
+    async with sem:
+        prompt = f"""
+        Extract cybersecurity-specific entities and relations from the following text.
+        Return JSON with "entities" and "relations".
 
-    Text:
-    {chunk_text}
-    """
-    response = client.chat.completions.create(
-        model="gpt-5-nano",
-        messages=[
-            {"role": "system", "content": "You are a cybersecurity knowledge graph builder."},
-            {"role": "user", "content": prompt}
-        ],
-        response_format={"type": "json_object"}
-    )
-    result = json.loads(response.choices[0].message.content)
+        Entities = list of {{"text": "...", "label": "..."}}
+        Relations = list of {{"source": "...", "target": "...", "type": "..."}}
 
-    entities = [(e["text"], e["label"]) for e in result.get("entities", [])]
-    relations = result.get("relations", [])
-    return entities, relations
+        Text:
+        {chunk_text}
+        """
+        response = await client.chat.completions.create(
+            model="gpt-5-nano",
+            messages=[
+                {"role": "system", "content": "You are a cybersecurity knowledge graph builder."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"},
+        )
+        result = json.loads(response.choices[0].message.content)
+        entities = [(e["text"], e["label"]) for e in result.get("entities", [])]
+        relations = result.get("relations", [])
+        return entities, relations
 
 # -------------------------
-# Neo4j Integration
+# Async Neo4j ingestion
 # -------------------------
-driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
+async def store_chunk_async(session, chunk_text, chunk_id, entities, relations):
+    await session.run("MERGE (c:Chunk {id:$id}) SET c.text=$text", id=chunk_id, text=chunk_text)
+    for entity, label in entities:
+        await session.run("MERGE (e:Entity {name:$name, label:$label})", name=entity, label=label)
+        await session.run(
+            "MATCH (c:Chunk {id:$chunk_id}), (e:Entity {name:$name}) MERGE (c)-[:MENTIONS]->(e)",
+            chunk_id=chunk_id, name=entity,
+        )
+    for rel in relations:
+        await session.run(
+            "MATCH (e1:Entity {name:$src}), (e2:Entity {name:$tgt}) "
+            f"MERGE (e1)-[:{rel['type'].upper()}]->(e2)",
+            src=rel["source"], tgt=rel["target"],
+        )
 
-def store_chunk_in_graph(chunk_text, chunk_id, entities, relations):
-    with driver.session() as session:
-        session.run("MERGE (c:Chunk {id:$id}) SET c.text=$text", id=chunk_id, text=chunk_text)
-        for entity, label in entities:
-            session.run("MERGE (e:Entity {name:$name, label:$label})", name=entity, label=label)
-            session.run(
-                "MATCH (c:Chunk {id:$chunk_id}), (e:Entity {name:$name}) "
-                "MERGE (c)-[:MENTIONS]->(e)",
-                chunk_id=chunk_id, name=entity
-            )
-        for rel in relations:
-            session.run(
-                "MATCH (e1:Entity {name:$src}), (e2:Entity {name:$tgt}) "
-                f"MERGE (e1)-[:{rel['type'].upper()}]->(e2)",
-                src=rel['source'], tgt=rel['target']
-            )
+async def ingest_chunks_async(chunks_with_entities):
+    async with driver.session() as session:
+        tasks = [
+            store_chunk_async(session, chunk_text, idx, entities, relations)
+            for idx, (chunk_text, entities, relations) in enumerate(chunks_with_entities)
+        ]
+        await asyncio.gather(*tasks)
 
-def create_semantic_similarity_edges(chunks, threshold=SIMILARITY_THRESHOLD):
-    embeddings = get_embeddings(chunks)
+# -------------------------
+# Semantic similarity edges
+# -------------------------
+def create_similarity_edges(chunks, threshold=SIMILARITY_THRESHOLD):
+    embeddings = [chunk.metadata['embedding'] for chunk in chunks]
     similarity_matrix = cosine_similarity(embeddings)
-    for i in range(len(embeddings)):
-        for j in range(i+1, len(embeddings)):
-            if similarity_matrix[i][j] > threshold:
-                with driver.session() as session:
-                    session.run(
-                        "MATCH (c1:Chunk {id:$i}), (c2:Chunk {id:$j}) "
-                        "MERGE (c1)-[:SIMILAR_TO {score:$score}]->(c2)",
-                        i=i, j=j, score=float(similarity_matrix[i][j])
-                    )
+    async def insert_edges():
+        async with driver.session() as session:
+            for i in range(len(embeddings)):
+                for j in range(i+1, len(embeddings)):
+                    if similarity_matrix[i][j] > threshold:
+                        await session.run(
+                            "MATCH (c1:Chunk {id:$i}), (c2:Chunk {id:$j}) "
+                            "MERGE (c1)-[:SIMILAR_TO {score:$score}]->(c2)",
+                            i=i, j=j, score=float(similarity_matrix[i][j])
+                        )
+    asyncio.run(insert_edges())
 
 # -------------------------
-# Main Pipeline
+# Main pipeline
+# -------------------------
+def main_pipeline():
+    documents = load_pdfs(DATA_DIR)
+
+    # Step 1: Save JSON (optional)
+    # save_documents_as_json(documents, output_dir=JSON_DIR)
+
+    # Step 2: Embed into Chroma and get chunks with embeddings
+    chunked_docs = embed_to_chromadb(documents)
+
+    # Step 3: Extract entities/relations asynchronously
+    print("Extracting entities and relations asynchronously...")
+    async def extract_all():
+        tasks = [extract_entities_relations_async(chunk.page_content) for chunk in chunked_docs]
+        return await asyncio.gather(*tasks)
+    extraction_results = asyncio.run(extract_all())
+
+    chunks_with_entities = [
+        (chunk.page_content, entities, relations)
+        for chunk, (entities, relations) in zip(chunked_docs, extraction_results)
+    ]
+
+    # Step 4: Ingest into Neo4j
+    print("Ingesting chunks into Neo4j...")
+    asyncio.run(ingest_chunks_async(chunks_with_entities))
+
+    # Step 5: Create similarity edges
+    print("Creating similarity edges...")
+    create_similarity_edges(chunked_docs)
+
+    print("Pipeline complete. JSON + ChromaDB + Neo4j ready.")
+
+# -------------------------
+# Run pipeline
 # -------------------------
 if __name__ == "__main__":
-    documents = load_pdfs(DATA_DIR)
-    chunked_docs = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP).split_documents(documents)
-
-    # Step 1: Optional save to JSON
-    save_documents_as_json(documents, output_dir=JSON_DIR)
-
-    # Step 2: Optional embed into Chroma
-    embed_to_chromadb(documents)
-
-    # Step 3: Process chunks for entities & relations
-    print("Processing chunks for entities and relations...")
-    for idx, chunk in tqdm(enumerate(chunked_docs), desc="Neo4j ingestion"):
-        entities, relations = extract_entities_relations(chunk.page_content)
-        store_chunk_in_graph(chunk.page_content, idx, entities, relations)
-
-    # Step 4: Create semantic similarity edges
-    print("Creating semantic similarity relationships...")
-    create_semantic_similarity_edges(chunked_docs)
-
-    print("Preprocessing complete. ChromaDB + Neo4j graph ready.")
+    main_pipeline()
