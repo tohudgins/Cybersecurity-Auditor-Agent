@@ -82,11 +82,6 @@ def embed_to_chromadb(documents):
         persist_directory=CHROMA_DIR
     )
     vectordb.add_documents(chunks)
-    # store embeddings in chunk metadata
-    for i, chunk in enumerate(chunks):
-        chunk.metadata['embedding'] = embeddings_model.embed_documents([chunk.page_content])[0]
-    print(f"Embedded {len(chunks)} chunks into ChromaDB at {CHROMA_DIR}")
-    return chunks
 
 # -------------------------
 # Async GPT-5-nano extraction
@@ -170,7 +165,12 @@ def main_pipeline():
     # save_documents_as_json(documents, output_dir=JSON_DIR)
 
     # Step 2: Embed into Chroma and get chunks with embeddings
-    chunked_docs = embed_to_chromadb(documents)
+    # embed_to_chromadb(documents)
+
+    chunked_docs = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP).split_documents(documents)
+    embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small")
+    for chunk in chunked_docs:
+        chunk.metadata['embedding'] = embeddings_model.embed_documents([chunk.page_content])[0]
 
     # Step 3: Extract entities/relations asynchronously
     print("Extracting entities and relations asynchronously...")
