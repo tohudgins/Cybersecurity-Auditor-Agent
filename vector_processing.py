@@ -11,6 +11,7 @@ from neo4j import AsyncGraphDatabase
 from dotenv import load_dotenv
 from sklearn.metrics.pairwise import cosine_similarity
 from openai import AsyncOpenAI
+from tqdm.asyncio import tqdm_asyncio
 from tqdm import tqdm
 
 load_dotenv()
@@ -40,6 +41,7 @@ driver = AsyncGraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 # Semaphore for GPT concurrency
 sem = asyncio.Semaphore(CONCURRENCY_LIMIT)
 
+
 # -------------------------
 # PDF Loading & Chunking
 # -------------------------
@@ -52,36 +54,17 @@ def load_pdfs(directory_path):
         documents.append(Document(page_content=text, metadata={"source": pdf_file}))
     return documents
 
-def save_documents_as_json(documents, output_dir=JSON_DIR):
-    os.makedirs(output_dir, exist_ok=True)
-    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-    for doc in tqdm(documents, desc="Saving JSON chunks"):
-        chunks = splitter.split_documents([doc])
-        formatted_chunks = []
-        for idx, chunk in enumerate(chunks):
-            formatted_chunks.append({
-                "chunk_id": idx,
-                "content": chunk.page_content,
-                "metadata": {"source": doc.metadata["source"], "chunk_index": idx}
-            })
-        out_path = os.path.join(output_dir, f"{os.path.splitext(doc.metadata['source'])[0]}.json")
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(formatted_chunks, f, indent=2, ensure_ascii=False)
 
 # -------------------------
-# Chroma Embeddings
+# Generate embeddings
 # -------------------------
-def embed_to_chromadb(documents):
-    print("Embedding documents into ChromaDB...")
-    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-    chunks = splitter.split_documents(documents)
+def generate_embeddings(chunks):
+    print("Generating embeddings for chunks...")
     embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small")
-    vectordb = Chroma(
-        collection_name=CHROMA_COLLECTION,
-        embedding_function=embeddings_model,
-        persist_directory=CHROMA_DIR
-    )
-    vectordb.add_documents(chunks)
+    for chunk in tqdm(chunks, desc="Generating embeddings"):
+        chunk.metadata['embedding'] = embeddings_model.embed_documents([chunk.page_content])[0]
+    return chunks
+
 
 # -------------------------
 # Async GPT-5-nano extraction
@@ -111,6 +94,29 @@ async def extract_entities_relations_async(chunk_text):
         relations = result.get("relations", [])
         return entities, relations
 
+
+# -------------------------
+# Async extraction with progress
+# -------------------------
+async def extract_all_entities_relations(chunks):
+    results = []
+    pbar = tqdm_asyncio(total=len(chunks), desc="Extracting entities/relations")
+    
+    async def worker(chunk):
+        entities, relations = await extract_entities_relations_async(chunk.page_content)
+        pbar.update(1)
+        return entities, relations
+
+    tasks = [worker(chunk) for chunk in chunks]
+
+    for coro in asyncio.as_completed(tasks):
+        result = await coro
+        results.append(result)
+    
+    pbar.close()
+    return results
+
+
 # -------------------------
 # Async Neo4j ingestion
 # -------------------------
@@ -129,6 +135,7 @@ async def store_chunk_async(session, chunk_text, chunk_id, entities, relations):
             src=rel["source"], tgt=rel["target"],
         )
 
+
 async def ingest_chunks_async(chunks_with_entities):
     async with driver.session() as session:
         tasks = [
@@ -137,23 +144,23 @@ async def ingest_chunks_async(chunks_with_entities):
         ]
         await asyncio.gather(*tasks)
 
+
 # -------------------------
 # Semantic similarity edges
 # -------------------------
-def create_similarity_edges(chunks, threshold=SIMILARITY_THRESHOLD):
+async def create_similarity_edges(chunks, threshold=SIMILARITY_THRESHOLD):
     embeddings = [chunk.metadata['embedding'] for chunk in chunks]
     similarity_matrix = cosine_similarity(embeddings)
-    async def insert_edges():
-        async with driver.session() as session:
-            for i in range(len(embeddings)):
-                for j in range(i+1, len(embeddings)):
-                    if similarity_matrix[i][j] > threshold:
-                        await session.run(
-                            "MATCH (c1:Chunk {id:$i}), (c2:Chunk {id:$j}) "
-                            "MERGE (c1)-[:SIMILAR_TO {score:$score}]->(c2)",
-                            i=i, j=j, score=float(similarity_matrix[i][j])
-                        )
-    asyncio.run(insert_edges())
+    async with driver.session() as session:
+        for i in range(len(embeddings)):
+            for j in range(i+1, len(embeddings)):
+                if similarity_matrix[i][j] > threshold:
+                    await session.run(
+                        "MATCH (c1:Chunk {id:$i}), (c2:Chunk {id:$j}) "
+                        "MERGE (c1)-[:SIMILAR_TO {score:$score}]->(c2)",
+                        i=i, j=j, score=float(similarity_matrix[i][j])
+                    )
+
 
 # -------------------------
 # Main pipeline
@@ -161,38 +168,33 @@ def create_similarity_edges(chunks, threshold=SIMILARITY_THRESHOLD):
 def main_pipeline():
     documents = load_pdfs(DATA_DIR)
 
-    # Step 1: Save JSON (optional)
-    # save_documents_as_json(documents, output_dir=JSON_DIR)
+    # Split into chunks
+    chunked_docs = RecursiveCharacterTextSplitter(
+        chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
+    ).split_documents(documents)
 
-    # Step 2: Embed into Chroma and get chunks with embeddings
-    # embed_to_chromadb(documents)
+    # Generate embeddings
+    chunked_docs = generate_embeddings(chunked_docs)
 
-    chunked_docs = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP).split_documents(documents)
-    embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small")
-    for chunk in chunked_docs:
-        chunk.metadata['embedding'] = embeddings_model.embed_documents([chunk.page_content])[0]
-
-    # Step 3: Extract entities/relations asynchronously
-    print("Extracting entities and relations asynchronously...")
-    async def extract_all():
-        tasks = [extract_entities_relations_async(chunk.page_content) for chunk in chunked_docs]
-        return await asyncio.gather(*tasks)
-    extraction_results = asyncio.run(extract_all())
+    # Extract entities and relations asynchronously
+    print("Extracting entities and relations...")
+    extraction_results = asyncio.run(extract_all_entities_relations(chunked_docs))
 
     chunks_with_entities = [
         (chunk.page_content, entities, relations)
         for chunk, (entities, relations) in zip(chunked_docs, extraction_results)
     ]
 
-    # Step 4: Ingest into Neo4j
+    # Ingest into Neo4j
     print("Ingesting chunks into Neo4j...")
     asyncio.run(ingest_chunks_async(chunks_with_entities))
 
-    # Step 5: Create similarity edges
+    # Create similarity edges
     print("Creating similarity edges...")
-    create_similarity_edges(chunked_docs)
+    asyncio.run(create_similarity_edges(chunked_docs))
 
     print("Pipeline complete. JSON + ChromaDB + Neo4j ready.")
+
 
 # -------------------------
 # Run pipeline
