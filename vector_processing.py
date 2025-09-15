@@ -46,12 +46,16 @@ sem = asyncio.Semaphore(CONCURRENCY_LIMIT)
 # PDF Loading & Chunking
 # -------------------------
 def load_pdfs(directory_path):
+    # Load all PDFs from the specified directory
     pdf_files = [f for f in os.listdir(directory_path) if f.endswith(".pdf")]
     documents = []
+    # Extract text from each PDF
     for pdf_file in tqdm(pdf_files, desc="Loading PDFs"):
         reader = PdfReader(os.path.join(directory_path, pdf_file))
         text = "".join([page.extract_text() or "" for page in reader.pages])
+        # Create a Document object with source pdf file metadata
         documents.append(Document(page_content=text, metadata={"source": pdf_file}))
+    # Return list of Document objects
     return documents
 
 
@@ -59,8 +63,10 @@ def load_pdfs(directory_path):
 # Save documents as JSON
 # -------------------------
 def save_documents_as_json(documents, output_dir=JSON_DIR):
-    chunks = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP).split_documents(documents)
+    # Split documents into chunks and save each as a JSON file
+    chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100).split_documents(documents)
     os.makedirs(output_dir, exist_ok=True)
+    # Save each chunk as a separate JSON file
     for idx, chunk in enumerate(tqdm(chunks, desc="Saving JSON chunks")):
         chunk_data = {
             "chunk_id": idx,
@@ -80,14 +86,18 @@ def save_documents_as_json(documents, output_dir=JSON_DIR):
 # Chroma Embeddings
 # -------------------------
 def embed_to_chromadb(documents):
-    chunks = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP).split_documents(documents)
+    # Split documents into chunks
+    chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100).split_documents(documents)
     print("Embedding documents into ChromaDB...")
+    # Initialize OpenAI embeddings model
     embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small")
+    # Initialize ChromaDB
     vectordb = Chroma(
         collection_name=CHROMA_COLLECTION,
         embedding_function=embeddings_model,
         persist_directory=CHROMA_DIR
     )
+    # Add documents to ChromaDB
     vectordb.add_documents(chunks)
 
 
@@ -96,9 +106,12 @@ def embed_to_chromadb(documents):
 # -------------------------
 def generate_embeddings(chunks):
     print("Generating embeddings for chunks...")
+    # Initialize OpenAI embeddings model
     embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small")
+    # Generate and attach embeddings to each chunk's metadata
     for chunk in tqdm(chunks, desc="Generating embeddings"):
         chunk.metadata['embedding'] = embeddings_model.embed_documents([chunk.page_content])[0]
+    # Return chunks with embeddings metadata attached
     return chunks
 
 
