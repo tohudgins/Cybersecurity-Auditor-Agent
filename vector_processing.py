@@ -26,7 +26,7 @@ CHROMA_COLLECTION = "Cybersecurity_Frameworks"
 CHUNK_SIZE = 2000
 CHUNK_OVERLAP = 200
 SIMILARITY_THRESHOLD = 0.6
-CONCURRENCY_LIMIT = 15  # GPT calls at once
+CONCURRENCY_LIMIT = 15  
 
 NEO4J_URI = "bolt://localhost:7687"
 NEO4J_USER = "neo4j"
@@ -53,6 +53,42 @@ def load_pdfs(directory_path):
         text = "".join([page.extract_text() or "" for page in reader.pages])
         documents.append(Document(page_content=text, metadata={"source": pdf_file}))
     return documents
+
+
+# -------------------------
+# Save documents as JSON
+# -------------------------
+def save_documents_as_json(documents, output_dir=JSON_DIR):
+    chunks = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP).split_documents(documents)
+    os.makedirs(output_dir, exist_ok=True)
+    for idx, chunk in enumerate(tqdm(chunks, desc="Saving JSON chunks")):
+        chunk_data = {
+            "chunk_id": idx,
+            "content": chunk.page_content,
+            "metadata": {
+                "source": chunk.metadata.get("source", "unknown"),
+                "chunk_index": idx,
+                "embedding": chunk.metadata.get("embedding")
+            }
+        }
+        out_path = os.path.join(output_dir, f"chunk_{idx}.json")
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(chunk_data, f, indent=2, ensure_ascii=False)
+
+
+# -------------------------
+# Chroma Embeddings
+# -------------------------
+def embed_to_chromadb(documents):
+    chunks = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP).split_documents(documents)
+    print("Embedding documents into ChromaDB...")
+    embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small")
+    vectordb = Chroma(
+        collection_name=CHROMA_COLLECTION,
+        embedding_function=embeddings_model,
+        persist_directory=CHROMA_DIR
+    )
+    vectordb.add_documents(chunks)
 
 
 # -------------------------
@@ -168,11 +204,17 @@ async def create_similarity_edges(chunks, threshold=SIMILARITY_THRESHOLD):
 def main_pipeline():
     documents = load_pdfs(DATA_DIR)
 
+    # Save original documents as JSON
+    # save_documents_as_json(documents, output_dir=JSON_DIR)
+
+    # Embed original documents to ChromaDB
+    # embed_to_chromadb(documents)
+
     # Split into chunks
     chunked_docs = RecursiveCharacterTextSplitter(
         chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
     ).split_documents(documents)
-
+    
     # Generate embeddings
     chunked_docs = generate_embeddings(chunked_docs)
 
