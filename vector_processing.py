@@ -63,23 +63,35 @@ def load_pdfs(directory_path):
 # Save documents as JSON
 # -------------------------
 def save_documents_as_json(documents, output_dir=JSON_DIR):
-    # Split documents into chunks and save each as a JSON file
-    chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100).split_documents(documents)
+    """
+    Save all chunks of each document into a single JSON file per document.
+    """
     os.makedirs(output_dir, exist_ok=True)
-    # Save each chunk as a separate JSON file
-    for idx, chunk in enumerate(tqdm(chunks, desc="Saving JSON chunks")):
-        chunk_data = {
-            "chunk_id": idx,
-            "content": chunk.page_content,
-            "metadata": {
-                "source": chunk.metadata.get("source", "unknown"),
-                "chunk_index": idx,
-                "embedding": chunk.metadata.get("embedding")
-            }
-        }
-        out_path = os.path.join(output_dir, f"chunk_{idx}.json")
+    
+    for doc_idx, document in enumerate(tqdm(documents, desc="Processing documents")):
+        # Split the document into chunks
+        chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100).split_documents([document])
+        
+        # Prepare JSON data for all chunks
+        chunks_data = []
+        for idx, chunk in enumerate(chunks):
+            chunks_data.append({
+                "chunk_id": idx,
+                "content": chunk.page_content,
+                "metadata": {
+                    "source": chunk.metadata.get("source", f"document_{doc_idx}"),
+                    "chunk_index": idx,
+                    "embedding": chunk.metadata.get("embedding", []),
+                }
+            })
+        
+        # Use the document's source or a default name for the JSON file
+        filename = f"{chunk.metadata.get('source', f'document_{doc_idx}')}.json"
+        out_path = os.path.join(output_dir, filename)
+        
+        # Save all chunks from this document into a single JSON file
         with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(chunk_data, f, indent=2, ensure_ascii=False)
+            json.dump(chunks_data, f, indent=2, ensure_ascii=False)
 
 
 # -------------------------
