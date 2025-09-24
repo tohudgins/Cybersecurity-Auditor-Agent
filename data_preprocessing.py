@@ -5,7 +5,7 @@ data_preprocessing.py
 
 Data Preprocessing Pipeline for Cybersecurity Frameworks
 This script processes PDF documents, splits them into manageable chunks,
-saves them as JSON files, and embeds them into a Chroma vector store for retrieval.
+saves the chunks in JSON files for each PDF, and embeds the chunks into a Chroma vector store for retrieval.
 '''
 import os
 import json
