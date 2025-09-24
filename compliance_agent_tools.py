@@ -1,14 +1,25 @@
 import os
+import json
 from dotenv import load_dotenv
+from typing import Callable, List, Optional
+
+# LangChain / model imports (provider packages used in your original file)
 from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnablePassthrough
-from langchain_core.output_parsers import StrOutputParser
-from langchain.chains import GraphCypherQAChain, load_summarize_chain
-from langchain_community.graphs import Neo4jGraph
+from langchain.chains import LLMChain
+from langchain.prompts import PromptTemplate
 
-# Load environment variables from a .env file
+# Text splitting / docs (used elsewhere if needed)
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.schema import Document
+
+# Optional Neo4j driver
+try:
+    from neo4j import GraphDatabase
+    _HAS_NEO4J = True
+except Exception:
+    _HAS_NEO4J = False
+
 load_dotenv()
 
 # --- Configuration ---
@@ -18,120 +29,128 @@ NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
 NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 
-# --- Helper Function ---
-def format_docs(docs):
-    """A utility to combine document contents into a single string for context."""
-    return "\n\n".join(doc.page_content for doc in docs)
+# --- Utilities ---
+def format_docs_text(docs: List[Document]) -> str:
+    return "\n\n".join(d.page_content for d in docs)
 
-# --- Tool 1: Vector Query Tool (for General Q&A) ---
-def create_vector_rag_tool():
-    """
-    Builds and returns a Retrieval-Augmented Generation (RAG) chain.
-    This tool is best for answering general, fact-based questions.
-    """
-    print("🛠️  Initializing Vector RAG Tool...")
+# --- Tool 1: Vector Query Tool (RAG) ---
+def create_vector_rag_tool() -> Callable[[str], str]:
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-    embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small")
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 
     vectorstore = Chroma(
         persist_directory=CHROMA_DIR,
-        embedding_function=embeddings_model,
-        collection_name=CHROMA_COLLECTION
+        embedding_function=embeddings,
+        collection_name=CHROMA_COLLECTION,
     )
     retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
 
-    template = """
-    You are an expert assistant for cybersecurity and compliance questions.
-    Answer the question based *only* on the following context.
-    If the context does not contain the answer, state that you don't know.
-
-    Context:
-    {context}
-
-    Question:
-    {question}
-    """
-    prompt = ChatPromptTemplate.from_template(template)
-
-    rag_chain = (
-        {"context": retriever | format_docs, "question": RunnablePassthrough()}
-        | prompt
-        | llm
-        | StrOutputParser()
+    prompt_tmpl = PromptTemplate(
+        input_variables=["context", "question"],
+        template=(
+            "You are a cybersecurity compliance assistant. Answer only from the context below.\n\n"
+            "Context:\n{context}\n\nQuestion:\n{question}\n\nIf the answer is not in the context, respond: "
+            "\"I don't know based on the provided materials.\""
+        ),
     )
-    return rag_chain
+    chain = LLMChain(llm=llm, prompt=prompt_tmpl)
 
-# --- Tool 2: Summarization Tool (for Topic Summaries) ---
-def create_summary_tool():
-    """
-    Builds and returns a retrieve-then-summarize chain.
-    This tool is best for broad questions that require summarizing a topic
-    across multiple documents.
-    """
-    print("🛠️  Initializing Summarization Tool...")
+    def vector_tool(question: str) -> str:
+        docs = retriever.get_relevant_documents(question)
+        context = format_docs_text(docs)
+        return chain.run({"context": context, "question": question})
+
+    return vector_tool
+
+# --- Tool 2: Summarization Tool ---
+def create_summary_tool() -> Callable[[str], str]:
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-    embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small")
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 
     vectorstore = Chroma(
         persist_directory=CHROMA_DIR,
-        embedding_function=embeddings_model,
-        collection_name=CHROMA_COLLECTION
+        embedding_function=embeddings,
+        collection_name=CHROMA_COLLECTION,
     )
-    # Retrieve more documents for a comprehensive summary
     retriever = vectorstore.as_retriever(search_kwargs={"k": 15})
 
-    # The "stuff" chain is simple and effective for summarization
-    summarize_chain = load_summarize_chain(llm, chain_type="stuff")
-    
-    # This chain retrieves documents and then passes them to the summarizer
-    return retriever | summarize_chain
-
-# --- Tool 3: Knowledge Graph Tool (for Comparisons) ---
-def create_kg_query_tool():
-    """
-    Builds and returns a Text-to-Cypher chain for the knowledge graph.
-    This tool is best for compare-and-contrast or multi-hop questions.
-    """
-    print("🛠️  Initializing Knowledge Graph Tool...")
-    
-    graph = Neo4jGraph(
-        url=NEO4J_URI,
-        username=NEO4J_USER,
-        password=NEO4J_PASSWORD
+    prompt_tmpl = PromptTemplate(
+        input_variables=["context", "topic"],
+        template=(
+            "You are an expert summarizer for cybersecurity frameworks.\n\n"
+            "Given the context below, produce a concise, structured summary focused on: {topic}\n\n"
+            "Context:\n{context}\n\nSummary:"
+        ),
     )
-    
-    # Use a powerful model for generating accurate Cypher queries
+    chain = LLMChain(llm=llm, prompt=prompt_tmpl)
+
+    def summary_tool(topic: str) -> str:
+        docs = retriever.get_relevant_documents(topic)
+        context = format_docs_text(docs)
+        return chain.run({"context": context, "topic": topic})
+
+    return summary_tool
+
+# --- Tool 3: Knowledge Graph / Cypher Tool ---
+def create_kg_query_tool() -> Callable[[str], str]:
     cypher_llm = ChatOpenAI(model="gpt-4o", temperature=0)
-    # Use a general model for formatting the final answer
-    qa_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-    
-    kg_chain = GraphCypherQAChain.from_llm(
-        cypher_llm=cypher_llm,
-        qa_llm=qa_llm,
-        graph=graph,
-        verbose=True # Set to True to see the generated Cypher query in action
+
+    prompt_tmpl = PromptTemplate(
+        input_variables=["question"],
+        template=(
+            "Translate the following natural language question into a single Cypher query.\n"
+            "Only output the Cypher query, without any explanatory text.\n\nQuestion:\n{question}\n\nCypher:"
+        ),
     )
-    return kg_chain
+    chain = LLMChain(llm=cypher_llm, prompt=prompt_tmpl)
 
-if __name__ == '__main__':
-    # --- Example Usage ---
-    # This block demonstrates how to initialize and test each tool.
-    
-    print("--- Testing Tool 1: Vector RAG Tool ---")
+    def kg_tool(question: str) -> str:
+        cypher = chain.run({"question": question}).strip()
+        # crude cleanup: extract last code-like line if LLM added commentary
+        lines = [l.strip() for l in cypher.splitlines() if l.strip()]
+        if lines:
+            cypher = lines[-1]
+
+        result_payload = {"cypher": cypher}
+
+        if _HAS_NEO4J and NEO4J_PASSWORD:
+            try:
+                driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
+                with driver.session() as session:
+                    records = list(session.run(cypher))
+                    # convert records to serializable form
+                    results = [r.data() for r in records]
+                result_payload["results"] = results
+            except Exception as e:
+                result_payload["error"] = str(e)
+        else:
+            result_payload["note"] = "Neo4j driver not available or credentials not provided; cypher returned only."
+
+        return json.dumps(result_payload, indent=2, ensure_ascii=False)
+
+    return kg_tool
+
+# --- Example usage when run directly ---
+if __name__ == "__main__":
+    print("Loading tools (using existing Chroma DB and Neo4j if configured)...")
     vector_tool = create_vector_rag_tool()
-    question1 = "What is the primary purpose of the NIST Cybersecurity Framework?"
-    response1 = vector_tool.invoke(question1)
-    print(f"Question: {question1}\nAnswer: {response1}\n")
-
-    print("--- Testing Tool 2: Summarization Tool ---")
     summary_tool = create_summary_tool()
-    question2 = "Summarize the different types of security controls mentioned across the frameworks."
-    response2 = summary_tool.invoke(question2)
-    print(f"Question: {question2}\nSummary: {response2['output_text']}\n")
-
-    print("--- Testing Tool 3: Knowledge Graph Tool ---")
     kg_tool = create_kg_query_tool()
-    question3 = "Compare the controls mandated by NIST with those from ISO 27001."
-    response3 = kg_tool.invoke(question3)
-    print(f"Question: {question3}\nAnswer: {response3['result']}\n")
 
+    q1 = "What is the primary purpose of the NIST Cybersecurity Framework?"
+    try:
+        print("Vector RAG answer:\n", vector_tool(q1))
+    except Exception as e:
+        print("Vector tool error:", e)
+
+    q2 = "Types of security controls across frameworks"
+    try:
+        print("Summary:\n", summary_tool(q2))
+    except Exception as e:
+        print("Summary tool error:", e)
+
+    q3 = "Find nodes relating NIST controls to ISO 27001 controls"
+    try:
+        print("KG tool output:\n", kg_tool(q3))
+    except Exception as e:
+        print("KG tool error:", e)
