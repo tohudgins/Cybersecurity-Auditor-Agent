@@ -53,6 +53,7 @@ Description: Loads all PDFs from the specified directory and extracts text into 
 def load_pdfs(directory_path : str):
     # Load all PDFs from the specified directory and extract text
     pdf_files = [f for f in os.listdir(directory_path) if f.endswith(".pdf")]
+    print(f"Found {len(pdf_files)} PDF files in {directory_path}.")
     documents = []
     print("Loading and extracting text from PDFs...")
     # Use tqdm for progress bar
