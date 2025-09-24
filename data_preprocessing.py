@@ -62,6 +62,9 @@ def load_pdfs(directory_path : str):
             # Extract text from each PDF
             reader = PdfReader(os.path.join(directory_path, pdf_file))
             text = "".join([page.extract_text() or "" for page in reader.pages])
+            if(pdf_file == 'CompTIA_Security+.pdf'):
+                print(pdf_file)
+                print(text)
             # Only add non-empty documents
             if text:
                 documents.append(Document(page_content=text, metadata={"source": pdf_file}))
