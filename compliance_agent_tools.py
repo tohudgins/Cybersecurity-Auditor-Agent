@@ -43,7 +43,7 @@ if _HAS_NEO4J and NEO4J_URI and NEO4J_USER and NEO4J_PASSWORD:
 def format_docs_text(docs: List[Document]) -> str:
     return "\n\n".join(d.page_content for d in docs)
 
-# --- Tool 1: Vector Query Tool (RAG with Enhanced Prompt) ---
+# --- Tool 1: Vector Query Tool  ---
 def create_vector_rag_tool() -> Callable[[str], str]:
     # Using the flagship model for the best reasoning and synthesis
     llm = ChatOpenAI(model="gpt-5", temperature=0.2)
@@ -77,7 +77,7 @@ def create_vector_rag_tool() -> Callable[[str], str]:
 
     return vector_tool
 
-# --- Tool 2: Thematic Summary Tool (ENHANCED WITH MULTI-QUERY) ---
+# --- Tool 2: Thematic Summary Tool  ---
 def create_thematic_summary_tool() -> Callable[[str], str]:
     """
     Creates a high-level thematic summary tool that uses a multi-query
