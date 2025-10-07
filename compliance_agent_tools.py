@@ -10,6 +10,7 @@ from langchain.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain.schema import Document
 from langchain.chains.summarize import load_summarize_chain
+from langchain.retrievers.multi_query import MultiQueryRetriever
 
 # Optional Neo4j driver
 try:
@@ -42,9 +43,10 @@ if _HAS_NEO4J and NEO4J_URI and NEO4J_USER and NEO4J_PASSWORD:
 def format_docs_text(docs: List[Document]) -> str:
     return "\n\n".join(d.page_content for d in docs)
 
-# --- Tool 1: Vector Query Tool (RAG) ---
+# --- Tool 1: Vector Query Tool (RAG with Enhanced Prompt) ---
 def create_vector_rag_tool() -> Callable[[str], str]:
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    # Using the flagship model for the best reasoning and synthesis
+    llm = ChatOpenAI(model="gpt-5", temperature=0.2)
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 
     vectorstore = Chroma(
@@ -52,14 +54,17 @@ def create_vector_rag_tool() -> Callable[[str], str]:
         embedding_function=embeddings,
         collection_name=CHROMA_COLLECTION,
     )
+    
+    # Using the standard retriever with an increased number of documents for more context
     retriever = vectorstore.as_retriever(search_kwargs={"k": 10})
 
+    # An explicit prompt requesting a detailed, multi-part answer
     prompt_tmpl = PromptTemplate(
         input_variables=["context", "question"],
         template=(
-            "You are a cybersecurity compliance assistant. Answer only from the context below.\n\n"
-            "Context:\n{context}\n\nQuestion:\n{question}\n\nIf the answer is not in the context, respond: "
-            "\"I don't know based on the provided materials.\""
+            "You are a cybersecurity compliance assistant. Your task is to answer the user's question based on the provided context.\n\n"
+            "Provide a detailed, multi-paragraph answer that synthesizes the key information from the context and answers the question. "
+            "Context:\n{context}\n\nQuestion:\n{question}\n\nDetailed Answer:"
         ),
     )
     
@@ -72,14 +77,15 @@ def create_vector_rag_tool() -> Callable[[str], str]:
 
     return vector_tool
 
-# --- Tool 2 (FINAL VERSION): Filtered Summary Tool with Custom Prompts ---
-def create_filtered_summary_tool() -> Callable[[str], str]:
+# --- Tool 2: Thematic Summary Tool (ENHANCED WITH MULTI-QUERY) ---
+def create_thematic_summary_tool() -> Callable[[str], str]:
     """
-    Creates a summary tool that first retrieves relevant documents for a topic,
-    then runs a MapReduce summary chain on them for a comprehensive answer.
-    This version uses custom prompts for higher quality results.
+    Creates a high-level thematic summary tool that uses a multi-query
+    retriever to gather a richer context.
     """
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    # Use a capable model for generating queries and a fast one for summarizing
+    query_llm = ChatOpenAI(model="gpt-5-mini", temperature=0.2)
+    summary_llm = ChatOpenAI(model="gpt-5-nano", temperature=0.2) 
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 
     vectorstore = Chroma(
@@ -87,50 +93,38 @@ def create_filtered_summary_tool() -> Callable[[str], str]:
         embedding_function=embeddings,
         collection_name=CHROMA_COLLECTION,
     )
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 25})
+    
+    # Set up the multi-query retriever
+    base_retriever = vectorstore.as_retriever(search_kwargs={"k": 10}) # Retrieve fewer docs per query
+    multi_query_retriever = MultiQueryRetriever.from_llm(
+        retriever=base_retriever, llm=query_llm
+    )
 
-    # Custom prompt for the "map" step
-    map_prompt_template = """
-    The following is a piece of context about cybersecurity frameworks.
-    Your goal is to extract the key points from this text that are relevant to the topic: "{topic}"
-    ---
-    {text}
-    ---
-    Based on the text above, extract the key points relevant to "{topic}":
-    """
-    map_prompt = PromptTemplate(template=map_prompt_template, input_variables=["text", "topic"])
-
-    # Custom prompt for the "combine" (or "reduce") step
     combine_prompt_template = """
     The following are key points extracted from several documents on the topic of "{topic}".
-    Your task is to synthesize these points into a single, final, and coherent summary.
-    The summary should be well-structured, easy to read, and directly answer the question about "{topic}".
+    Your task is to synthesize these points into a single, final, and coherent high-level summary.
     ---
     {text}
     ---
-    Final, synthesized summary:
+    Final, synthesized summary on the topic of "{topic}":
     """
     combine_prompt = PromptTemplate(template=combine_prompt_template, input_variables=["text", "topic"])
 
-    # Create the MapReduce summarization chain WITH the custom prompts
     summary_chain = load_summarize_chain(
-        llm=llm,
+        llm=summary_llm,
         chain_type="map_reduce",
-        map_prompt=map_prompt,
         combine_prompt=combine_prompt,
     )
 
-    def filtered_summary_tool(topic: str) -> str:
-        """The actual tool function that executes the filter-then-summarize logic."""
-        print(f"Filtering for documents relevant to: '{topic}'...")
-        
-        relevant_docs = retriever.invoke(topic)
+    def thematic_summary_tool(topic: str) -> str:
+        print(f"Generating multiple queries for topic: '{topic}'...")
+        # The multi-query retriever will fetch docs for all generated questions
+        relevant_docs = multi_query_retriever.invoke(topic)
         
         if not relevant_docs:
             return "No relevant documents found for this topic."
             
-        print(f"Found {len(relevant_docs)} relevant documents. Starting summarization...")
-
+        print(f"Found {len(relevant_docs)} documents across all queries. Starting summarization...")
         result = summary_chain.invoke({
             "input_documents": relevant_docs,
             "topic": topic
@@ -138,11 +132,10 @@ def create_filtered_summary_tool() -> Callable[[str], str]:
         
         return result['output_text']
 
-    return filtered_summary_tool
+    return thematic_summary_tool
 
-# --- Tool 3: Knowledge Graph / Cypher Tool (Ignored for now) ---
+# --- Tool 3: Knowledge Graph / Cypher Tool ---
 def get_graph_schema(driver) -> str:
-    # ... (function is unchanged)
     if not driver:
         return "Graph schema not available."
     try:
@@ -159,8 +152,8 @@ def get_graph_schema(driver) -> str:
 
 
 def create_kg_query_tool() -> Callable[[str], str]:
-    # ... (function is unchanged)
-    cypher_llm = ChatOpenAI(model="gpt-4o", temperature=0)
+    # UPDATED to use the flagship gpt-5 model for complex Cypher generation
+    cypher_llm = ChatOpenAI(model="gpt-5-mini", temperature=0)
     graph_schema = get_graph_schema(NEO4J_DRIVER)
 
     prompt_tmpl = PromptTemplate(
@@ -200,7 +193,7 @@ def create_kg_query_tool() -> Callable[[str], str]:
 if __name__ == "__main__":
     print("\nLoading tools (using existing Chroma DB and Neo4j if configured)...")
     vector_tool = create_vector_rag_tool()
-    summary_tool = create_filtered_summary_tool()
+    summary_tool = create_thematic_summary_tool()
     kg_tool = create_kg_query_tool()
     print("Tools loaded.\n" + "="*50)
 
