@@ -104,6 +104,7 @@ To add a framework: drop the PDF in `data/`, add an entry to `FRAMEWORK_NAMES` i
 | `policy_pdf` | Internal security policy PDF | `tools/audit_policy_pdf.py` |
 | `config` | `sshd_config`, `nginx.conf`, `Dockerfile`, `*.tf`, Kubernetes YAML | `tools/audit_config.py` |
 | `log` | `auth.log`, syslog, JSON event logs | `tools/audit_logs.py` |
+| `codebase` | Local directory path; Trivy scans for known-vulnerable dependencies (CVEs) | `tools/audit_codebase.py` |
 
 ---
 
@@ -181,15 +182,32 @@ The same `pytest` and `ruff check` commands run automatically on every push and 
 
 ---
 
+## External tools
+
+Some audit paths shell out to industry-standard scanners. Install these locally to enable the corresponding audit kind:
+
+- **[Trivy](https://aquasecurity.github.io/trivy/)** — SBOM + CVE scanning for the `codebase` artifact kind. Install:
+  - Windows (scoop): `scoop install trivy`
+  - Windows (manual): download from https://github.com/aquasecurity/trivy/releases
+  - macOS: `brew install trivy`
+  - Linux: see https://aquasecurity.github.io/trivy/latest/getting-started/installation/
+
+The auditor degrades gracefully if a scanner is missing — it surfaces an info-level finding telling you to install the tool, rather than crashing.
+
+---
+
 ## Roadmap
 
 Deliberate v1 cuts; happy to revisit:
 
+- **Threat-intel enrichment** — auto-tag CVE findings with [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) (Known Exploited Vulnerabilities) and [MITRE ATT&CK](https://attack.mitre.org/) techniques.
+- **IaC scanning with [Checkov](https://www.checkov.io/)** — replace the regex heuristics in `audit_config.py` with 1000+ real rules for Terraform / Kubernetes / CloudFormation.
+- **Python SAST with [Bandit](https://bandit.readthedocs.io/)** — code-level security checks alongside Trivy's dependency scan.
+- **[OSCAL](https://pages.nist.gov/OSCAL/) export** — emit audit results in NIST's machine-readable assessment format (the one FedRAMP / GRC platforms consume).
+- **CVSS scoring** — display CVSS base score alongside qualitative severity on CVE findings.
 - **Cross-framework knowledge graph** — Neo4j with `MAPS_TO` / `SIMILAR` relationships between controls in different frameworks.
-- **SBOM / dependency scanning** — slot a new `audit_sbom.py` tool in alongside the existing four.
 - **Live cloud-API scanning** — AWS Config / Azure Policy ingestion instead of file uploads.
 - **Multi-user persistence** — audit history, RBAC, shareable report links.
-- **Provider-agnostic LLM layer** — swap OpenAI for Anthropic / local models via a single config flip.
 
 ---
 

@@ -55,6 +55,11 @@ with st.sidebar:
         height=120,
         placeholder="Describe your system, controls, environment...",
     )
+    codebase_path = st.text_input(
+        "...or a codebase path to scan with Trivy",
+        placeholder=r"C:\path\to\project  or  /home/user/repo",
+        help="Scans for known-vulnerable dependencies. Requires Trivy installed locally (see README).",
+    )
 
 
 # ---- Helpers ---------------------------------------------------------------
@@ -84,6 +89,10 @@ def _build_artifacts() -> list[Artifact]:
         else:
             content = raw.decode("utf-8", errors="replace")
         artifacts.append(Artifact(kind=kind, name=f.name, content=content))  # type: ignore[arg-type]
+
+    if codebase_path.strip():
+        path = codebase_path.strip()
+        artifacts.append(Artifact(kind="codebase", name=path, content=path))
 
     return artifacts
 

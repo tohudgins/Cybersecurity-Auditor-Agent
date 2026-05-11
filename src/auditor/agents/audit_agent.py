@@ -5,6 +5,7 @@ import logging
 
 from auditor.agents.state import AuditorState
 from auditor.models import Artifact, Finding
+from auditor.tools.audit_codebase import audit_codebase
 from auditor.tools.audit_config import audit_config
 from auditor.tools.audit_logs import audit_logs
 from auditor.tools.audit_policy_pdf import audit_policy_text
@@ -22,6 +23,8 @@ def _audit_one(artifact: Artifact, frameworks: list[str] | None) -> list[Finding
         return audit_config(artifact.content, artifact.name, frameworks=frameworks)
     if artifact.kind == "log":
         return audit_logs(artifact.content, frameworks=frameworks, source_artifact=artifact.name)
+    if artifact.kind == "codebase":
+        return audit_codebase(artifact.content)  # content holds the directory path
     log.warning("Unknown artifact kind: %s", artifact.kind)
     return []
 
