@@ -42,7 +42,7 @@ resource "aws_db_instance" "primary" {
   allocated_storage = 20
 
   username = "admin"
-  password = "changeme123"
+  password = "changeme123" # gitleaks:allow — demo artifact, deliberately weak
 
   publicly_accessible = true
   storage_encrypted   = false

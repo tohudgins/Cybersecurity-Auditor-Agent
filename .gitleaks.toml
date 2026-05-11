@@ -1,0 +1,15 @@
+# gitleaks configuration for the cybersecurity-auditor repo.
+#
+# Extends the default ruleset (so all built-in detectors stay active) and
+# allowlists the `examples/` directory because every file in there is a
+# deliberately-weak artifact used to exercise the audit pipeline. Real
+# secrets anywhere else in the repo will still fire.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Demo artifacts under examples/ are intentionally weak; not real secrets."
+paths = [
+    '''examples/.*''',
+]
