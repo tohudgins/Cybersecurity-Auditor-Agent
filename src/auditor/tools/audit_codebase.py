@@ -60,6 +60,27 @@ def _info(title: str, evidence: str, recommendation: str, source: str | None = N
 # ---- Trivy -----------------------------------------------------------------
 
 
+def _extract_cvss(vuln: dict) -> tuple[float | None, str | None]:
+    """Pick the best available CVSS v3 score + vector from Trivy's CVSS dict.
+
+    Trivy reports per-vendor (nvd, redhat, ghsa, ...). NVD is the canonical
+    source; fall back to whatever is present.
+    """
+    cvss_data = vuln.get("CVSS") or {}
+    vendor_order = ("nvd", "ghsa", "redhat", "bitnami")
+    candidates = [cvss_data[v] for v in vendor_order if v in cvss_data]
+    candidates.extend(v for k, v in cvss_data.items() if k not in vendor_order)
+
+    for entry in candidates:
+        if not isinstance(entry, dict):
+            continue
+        score = entry.get("V3Score") or entry.get("V31Score")
+        vector = entry.get("V3Vector") or entry.get("V31Vector")
+        if score is not None:
+            return float(score), vector
+    return None, None
+
+
 def _vuln_to_finding(vuln: dict, target: str, scanned_path: str) -> Finding:
     pkg = vuln.get("PkgName", "?")
     installed = vuln.get("InstalledVersion", "?")
@@ -84,6 +105,8 @@ def _vuln_to_finding(vuln: dict, target: str, scanned_path: str) -> Finding:
     else:
         title = f"{pkg} {installed}: {cve}"
 
+    cvss_score, cvss_vector = _extract_cvss(vuln)
+
     return Finding(
         title=title,
         severity=severity,  # type: ignore[arg-type]
@@ -93,6 +116,8 @@ def _vuln_to_finding(vuln: dict, target: str, scanned_path: str) -> Finding:
         recommendation=recommendation,
         source_artifact=scanned_path,
         kev=in_kev,
+        cvss_score=cvss_score,
+        cvss_vector=cvss_vector,
     )
 
 

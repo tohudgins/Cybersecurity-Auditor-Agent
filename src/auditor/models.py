@@ -36,6 +36,14 @@ class Finding(BaseModel):
         default_factory=list,
         description="MITRE ATT&CK technique IDs this finding maps to (e.g., 'T1110.001').",
     )
+    cvss_score: float | None = Field(
+        default=None,
+        description="CVSS v3 base score (0.0-10.0) for CVE findings. None if not applicable.",
+    )
+    cvss_vector: str | None = Field(
+        default=None,
+        description="CVSS v3 vector string (e.g., 'CVSS:3.1/AV:N/AC:L/...'). None if not applicable.",
+    )
 
 
 class Artifact(BaseModel):

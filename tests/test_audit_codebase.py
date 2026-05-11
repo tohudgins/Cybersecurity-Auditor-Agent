@@ -153,6 +153,67 @@ def test_audit_codebase_skips_bandit_when_no_python(monkeypatch, tmp_path):
     assert called["bandit"] is False
 
 
+def test_audit_codebase_extracts_cvss_score_from_trivy(monkeypatch, tmp_path):
+    payload = {
+        "SchemaVersion": 2,
+        "Results": [
+            {
+                "Target": "requirements.txt",
+                "Vulnerabilities": [
+                    {
+                        "VulnerabilityID": "CVE-2021-44228",
+                        "PkgName": "log4j",
+                        "InstalledVersion": "2.14.0",
+                        "FixedVersion": "2.17.1",
+                        "Severity": "CRITICAL",
+                        "Title": "Log4Shell",
+                        "CVSS": {
+                            "nvd": {
+                                "V3Score": 10.0,
+                                "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",
+                            },
+                            "redhat": {"V3Score": 9.8},
+                        },
+                    },
+                ],
+            }
+        ],
+    }
+    monkeypatch.setattr(subprocess, "run", lambda *_, **__: _fake_run(stdout=json.dumps(payload)))
+
+    findings = ac.audit_codebase(tmp_path)
+    assert len(findings) == 1
+    f = findings[0]
+    assert f.cvss_score == 10.0  # NVD chosen over Red Hat
+    assert f.cvss_vector is not None
+    assert f.cvss_vector.startswith("CVSS:3.1/")
+
+
+def test_audit_codebase_missing_cvss_is_none(monkeypatch, tmp_path):
+    payload = {
+        "SchemaVersion": 2,
+        "Results": [
+            {
+                "Target": "requirements.txt",
+                "Vulnerabilities": [
+                    {
+                        "VulnerabilityID": "CVE-2099-00001",
+                        "PkgName": "obscure",
+                        "InstalledVersion": "0.0.1",
+                        "Severity": "HIGH",
+                        "Title": "Some vuln",
+                    },
+                ],
+            }
+        ],
+    }
+    monkeypatch.setattr(subprocess, "run", lambda *_, **__: _fake_run(stdout=json.dumps(payload)))
+
+    f = ac.audit_codebase(tmp_path)[0]
+    assert f.cvss_score is None
+    assert f.cvss_vector is None
+
+
 def test_audit_codebase_handles_missing_bandit(monkeypatch, tmp_path):
     (tmp_path / "app.py").write_text("pass\n")
 
