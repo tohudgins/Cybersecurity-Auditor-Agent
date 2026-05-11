@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 import json  # noqa: E402
-from datetime import UTC, datetime  # noqa: E402
+from datetime import datetime, timezone  # noqa: E402
 
 import streamlit as st  # noqa: E402
 from langchain_core.messages import AIMessage, HumanMessage  # noqa: E402
@@ -144,7 +144,7 @@ if prompt:
         findings = result.get("findings") or []
         if findings:
             oscal_doc = to_oscal_assessment_results(findings)
-            timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
             st.download_button(
                 label="Export OSCAL Assessment Results",
                 data=json.dumps(oscal_doc, indent=2),
