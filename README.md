@@ -11,7 +11,7 @@
 A local Streamlit app that puts a cybersecurity GRC analyst behind a chat box. Two modes:
 
 - **Compliance Q&A** — ask any question about NIST CSF, NIST SP 800-53/37/30, CIS Controls v8.1, OWASP ASVS, MITRE ATT&CK, or CompTIA Security+ and get a cited answer pulling directly from the framework PDFs.
-- **System auditing** — upload a config file, log sample, internal policy PDF, codebase path, or paste a free-text system description; the agent runs heuristic + LLM checks, scans dependencies with Trivy for CVEs, and returns a Markdown audit report with severity-ranked findings tied to specific framework controls.
+- **System auditing** — upload a config file, log sample, internal policy PDF, codebase path, or paste a free-text system description; the agent runs heuristic + LLM checks, scans dependencies with **Trivy** for CVEs, runs **Bandit** for Python SAST, runs **Checkov** for Terraform / Kubernetes IaC scanning, and returns a Markdown audit report with severity-ranked findings tied to specific framework controls.
 
 Every finding is enriched with two threat-intel layers:
 
@@ -198,8 +198,13 @@ Some audit paths shell out to industry-standard scanners. Install these locally 
   - Windows (manual): download from https://github.com/aquasecurity/trivy/releases
   - macOS: `brew install trivy`
   - Linux: see https://aquasecurity.github.io/trivy/latest/getting-started/installation/
+- **[Checkov](https://www.checkov.io/)** — IaC scanning for Terraform / Kubernetes configs. Replaces the regex heuristics in `audit_config.py` with 1000+ real rules.
+  - All platforms: `pip install checkov`
+  - Fallback: if Checkov isn't installed, `audit_config` emits an info-level "Checkov not installed" finding and falls back to the regex heuristics, so the demo still works.
+- **[Bandit](https://bandit.readthedocs.io/)** — Python static security analysis. Runs as part of `audit_codebase` whenever the scanned path contains `*.py` files.
+  - All platforms: `pip install bandit`
 
-The auditor degrades gracefully if a scanner is missing — it surfaces an info-level finding telling you to install the tool, rather than crashing.
+The auditor degrades gracefully if any scanner is missing — it surfaces an info-level finding telling you to install the tool, rather than crashing.
 
 ---
 
@@ -207,8 +212,6 @@ The auditor degrades gracefully if a scanner is missing — it surfaces an info-
 
 Deliberate v1 cuts; happy to revisit:
 
-- **IaC scanning with [Checkov](https://www.checkov.io/)** — replace the regex heuristics in `audit_config.py` with 1000+ real rules for Terraform / Kubernetes / CloudFormation.
-- **Python SAST with [Bandit](https://bandit.readthedocs.io/)** — code-level security checks alongside Trivy's dependency scan.
 - **[OSCAL](https://pages.nist.gov/OSCAL/) export** — emit audit results in NIST's machine-readable assessment format (the one FedRAMP / GRC platforms consume).
 - **CVSS scoring** — display CVSS base score alongside qualitative severity on CVE findings.
 - **Cross-framework knowledge graph** — Neo4j with `MAPS_TO` / `SIMILAR` relationships between controls in different frameworks.
