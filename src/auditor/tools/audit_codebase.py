@@ -13,6 +13,7 @@ import logging
 import subprocess
 from pathlib import Path
 
+from auditor.enrichment import kev
 from auditor.models import Finding
 
 log = logging.getLogger(__name__)
@@ -62,14 +63,22 @@ def _vuln_to_finding(vuln: dict, target: str, scanned_path: str) -> Finding:
             "WAF rules, or mitigations from the CVE advisory)."
         )
 
+    in_kev = kev.is_kev(cve)
+    if in_kev:
+        severity = "critical"
+        title = f"[KEV] {pkg} {installed}: {cve}"
+    else:
+        title = f"{pkg} {installed}: {cve}"
+
     return Finding(
-        title=f"{pkg} {installed}: {cve}",
+        title=title,
         severity=severity,  # type: ignore[arg-type]
         framework="NIST SP 800-53 Rev. 5",
         control_id="SI-2",
         evidence=f"{title_summary} (affected: {target})",
         recommendation=recommendation,
         source_artifact=scanned_path,
+        kev=in_kev,
     )
 
 

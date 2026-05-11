@@ -24,16 +24,23 @@ _SEVERITY_BADGE = {
 
 def _render_finding(idx: int, f: Finding) -> str:
     badge = _SEVERITY_BADGE.get(f.severity, f"**[{f.severity.upper()}]**")
+    if f.kev:
+        badge = "**[KEV - actively exploited]** " + badge
+
     framework_line = ""
     if f.framework or f.control_id:
         framework_line = f"- **Mapped control:** {f.framework or 'unspecified'}"
         if f.control_id:
             framework_line += f" — {f.control_id}"
         framework_line += "\n"
+    attack_line = ""
+    if f.attack_techniques:
+        attack_line = f"- **MITRE ATT&CK:** {', '.join(f.attack_techniques)}\n"
     source_line = f"- **Source artifact:** `{f.source_artifact}`\n" if f.source_artifact else ""
     return (
         f"### {idx}. {badge} {f.title}\n"
         f"{framework_line}"
+        f"{attack_line}"
         f"{source_line}"
         f"- **Evidence:** {f.evidence}\n"
         f"- **Recommendation:** {f.recommendation}\n"

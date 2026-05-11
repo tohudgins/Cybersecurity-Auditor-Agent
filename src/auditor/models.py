@@ -28,6 +28,14 @@ class Finding(BaseModel):
         default=None,
         description="Filename or label of the artifact this finding came from.",
     )
+    kev: bool = Field(
+        default=False,
+        description="True if the underlying CVE is in CISA's Known Exploited Vulnerabilities catalog.",
+    )
+    attack_techniques: list[str] = Field(
+        default_factory=list,
+        description="MITRE ATT&CK technique IDs this finding maps to (e.g., 'T1110.001').",
+    )
 
 
 class Artifact(BaseModel):
