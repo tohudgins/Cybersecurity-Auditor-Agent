@@ -1,0 +1,21 @@
+# Streamlit Community Cloud reads this file (it doesn't read pyproject.toml).
+# Mirror of the pyproject [project.dependencies] + the `scanners` extra.
+
+langchain-core>=0.3.0
+langchain-openai>=0.2.0
+langchain-chroma>=0.1.4
+langchain-text-splitters>=0.3.0
+langgraph>=0.2.40
+chromadb>=0.5.0
+openai>=1.50.0
+pypdf>=4.3.0
+pydantic>=2.7.0
+pydantic-settings>=2.4.0
+python-dotenv>=1.0.1
+tqdm>=4.66.0
+streamlit>=1.38.0
+pyyaml>=6.0.2
+
+# scanners extra (Checkov + Bandit are pure Python, work on Cloud)
+checkov>=3.0.0
+bandit>=1.7.0
