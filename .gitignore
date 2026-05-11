@@ -1,7 +1,70 @@
 .env
-.chromadb/chroma.sqlite3
-.chromadb/f6ec9f38-95b6-4511-a305-00e21cee0f65/data_level0.bin
-.chromadb/f6ec9f38-95b6-4511-a305-00e21cee0f65/header.bin
-.chromadb/f6ec9f38-95b6-4511-a305-00e21cee0f65/length.bin
-.chromadb/f6ec9f38-95b6-4511-a305-00e21cee0f65/link_lists.bin
+.chromadb/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Streamlit secrets file — auto-loaded if present
+.streamlit/secrets.toml
+
+# Coverage / type-checker artifacts
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.pyright/
+.dmypy.json
+dmypy.json
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Toolchain managers
+.python-version
+.uv/
+.envrc
+.direnv/
+
+# Editor backups + VS Code Local History
+*.swp
+*.swo
+*~
+*.bak
+.history/
+
+# Stray logs / pid files
+*.log
+*.pid
+
+# Claude Code per-user settings
+.claude/settings.local.json
+
+# Runtime outputs from future audit features
+uploads/
+audits/
+reports/
+out/
+artifacts/
+oscal-output/
+trivy-cache/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local notes
 notes.txt
