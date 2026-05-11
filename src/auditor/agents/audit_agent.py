@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 
 from auditor.agents.state import AuditorState
+from auditor.enrichment.mitre import enrich_findings
 from auditor.models import Artifact, Finding
 from auditor.tools.audit_codebase import audit_codebase
 from auditor.tools.audit_config import audit_config
@@ -49,4 +50,5 @@ def audit_node(state: AuditorState) -> dict:
                 )
             )
 
+    enrich_findings(all_findings)
     return {"findings": all_findings}

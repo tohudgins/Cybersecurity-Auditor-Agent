@@ -11,7 +11,12 @@
 A local Streamlit app that puts a cybersecurity GRC analyst behind a chat box. Two modes:
 
 - **Compliance Q&A** — ask any question about NIST CSF, NIST SP 800-53/37/30, CIS Controls v8.1, OWASP ASVS, MITRE ATT&CK, or CompTIA Security+ and get a cited answer pulling directly from the framework PDFs.
-- **System auditing** — upload a config file, log sample, internal policy PDF, or paste a free-text system description; the agent runs heuristic + LLM checks and returns a Markdown audit report with severity-ranked findings tied to specific framework controls.
+- **System auditing** — upload a config file, log sample, internal policy PDF, codebase path, or paste a free-text system description; the agent runs heuristic + LLM checks, scans dependencies with Trivy for CVEs, and returns a Markdown audit report with severity-ranked findings tied to specific framework controls.
+
+Every finding is enriched with two threat-intel layers:
+
+- **CISA KEV** — CVEs in CISA's [Known Exploited Vulnerabilities](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) catalog get bumped to `critical` severity with a `[KEV - actively exploited]` badge.
+- **MITRE ATT&CK** — each finding is tagged with the relevant [ATT&CK techniques](https://attack.mitre.org/techniques/enterprise/) (e.g., a brute-force log finding → `T1110.001`, an open security group → `T1190`).
 
 ---
 
@@ -62,7 +67,8 @@ Auditor: # Cybersecurity Audit Report
             ┌──────────┴──────────┐
             ▼                     ▼
      compliance_node          audit_node
-     (Q&A / summary)          (dispatches to per-kind audit tool)
+     (Q&A / summary)          (dispatches to per-kind audit tool;
+                              enriches every finding with KEV + ATT&CK)
             │                     │
             └──────────┬──────────┘
                        ▼
@@ -150,6 +156,7 @@ Open the printed URL (defaults to `http://localhost:8501`).
 │   ├── ingest/                     # PDF -> chunks -> Chroma
 │   ├── retrieval/                  # vector retrieval with framework filtering
 │   ├── tools/                      # compliance_qa, framework_summary, audit_*
+│   ├── enrichment/                 # CISA KEV lookup + MITRE ATT&CK technique tagging
 │   ├── prompts/                    # PromptTemplates kept separate from logic
 │   └── agents/                     # supervisor, compliance, audit, reporting + graph wiring
 └── tests/                          # pytest smoke tests (LLM + retriever stubbed)
@@ -200,7 +207,6 @@ The auditor degrades gracefully if a scanner is missing — it surfaces an info-
 
 Deliberate v1 cuts; happy to revisit:
 
-- **Threat-intel enrichment** — auto-tag CVE findings with [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) (Known Exploited Vulnerabilities) and [MITRE ATT&CK](https://attack.mitre.org/) techniques.
 - **IaC scanning with [Checkov](https://www.checkov.io/)** — replace the regex heuristics in `audit_config.py` with 1000+ real rules for Terraform / Kubernetes / CloudFormation.
 - **Python SAST with [Bandit](https://bandit.readthedocs.io/)** — code-level security checks alongside Trivy's dependency scan.
 - **[OSCAL](https://pages.nist.gov/OSCAL/) export** — emit audit results in NIST's machine-readable assessment format (the one FedRAMP / GRC platforms consume).

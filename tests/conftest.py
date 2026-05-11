@@ -11,7 +11,8 @@ os.environ.setdefault("OPENAI_API_KEY", "test-key-not-real")
 
 @pytest.fixture(autouse=True)
 def _stub_llm_and_retriever(monkeypatch):
-    """Replace `run_findings_chain` and `retrieve` everywhere they're used."""
+    """Replace `run_findings_chain`, `retrieve`, and KEV network calls."""
+    from auditor.enrichment import kev as kev_mod
     from auditor.models import Finding
     from auditor.retrieval import retriever as retriever_mod
     from auditor.tools import _findings_llm, audit_config, audit_logs, audit_policy_pdf, audit_text
@@ -39,3 +40,7 @@ def _stub_llm_and_retriever(monkeypatch):
     for module in (audit_config, audit_logs, audit_policy_pdf, audit_text, retriever_mod):
         if hasattr(module, "retrieve"):
             monkeypatch.setattr(module, "retrieve", _fake_retrieve)
+
+    # Default: KEV lookup returns False so tests don't hit the network.
+    # Individual tests can monkeypatch `is_kev` to True/False as needed.
+    monkeypatch.setattr(kev_mod, "is_kev", lambda _cve: False)
