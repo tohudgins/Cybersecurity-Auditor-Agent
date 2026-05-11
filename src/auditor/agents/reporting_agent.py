@@ -12,7 +12,6 @@ from auditor.config import settings
 from auditor.models import Finding
 from auditor.prompts.reporting import EXECUTIVE_SUMMARY_PROMPT
 
-
 _SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
 _SEVERITY_BADGE = {
     "critical": "**[CRITICAL]**",

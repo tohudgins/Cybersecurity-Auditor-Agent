@@ -1,12 +1,11 @@
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pypdf import PdfReader
 
 from auditor.config import settings
-
 
 FRAMEWORK_NAMES: dict[str, str] = {
     "CIS_Controls__v8.1_Guide__2024_06.pdf": "CIS Controls v8.1",

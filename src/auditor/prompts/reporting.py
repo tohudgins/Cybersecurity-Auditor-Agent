@@ -1,6 +1,5 @@
 from langchain_core.prompts import PromptTemplate
 
-
 EXECUTIVE_SUMMARY_PROMPT = PromptTemplate(
     input_variables=["findings_text", "frameworks"],
     template=(

@@ -7,7 +7,6 @@ from auditor.agents.state import AuditorState
 from auditor.tools.compliance_qa import answer_compliance_question
 from auditor.tools.framework_summary import summarize_topic
 
-
 _SUMMARY_TRIGGERS = ("summarize", "summary", "overview", "high-level", "key points")
 
 

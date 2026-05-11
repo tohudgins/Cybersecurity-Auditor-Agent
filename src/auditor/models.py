@@ -5,7 +5,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-
 Severity = Literal["info", "low", "medium", "high", "critical"]
 ArtifactKind = Literal["text", "policy_pdf", "config", "log"]
 

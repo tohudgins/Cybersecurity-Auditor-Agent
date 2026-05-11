@@ -1,9 +1,9 @@
 """Shared helper: invoke an LLM with structured output and return list[Finding]."""
 from __future__ import annotations
 
-from pydantic import BaseModel
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel
 
 from auditor.config import settings
 from auditor.models import Finding

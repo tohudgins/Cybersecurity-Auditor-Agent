@@ -1,9 +1,9 @@
 """Audit a user-uploaded internal policy PDF against framework requirements."""
 from __future__ import annotations
 
+from collections.abc import Sequence
 from io import BytesIO
 from pathlib import Path
-from typing import Sequence
 
 from pypdf import PdfReader
 
@@ -12,12 +12,11 @@ from auditor.prompts.audit import POLICY_PDF_AUDIT_PROMPT
 from auditor.retrieval.retriever import format_docs, retrieve
 from auditor.tools._findings_llm import run_findings_chain
 
-
 _MAX_POLICY_CHARS = 60_000  # rough guard so we don't blow the context window
 
 
 def extract_pdf_text(source: bytes | Path) -> str:
-    reader = PdfReader(BytesIO(source) if isinstance(source, (bytes, bytearray)) else str(source))
+    reader = PdfReader(BytesIO(source) if isinstance(source, bytes | bytearray) else str(source))
     return "\n\n".join((page.extract_text() or "") for page in reader.pages).strip()
 
 

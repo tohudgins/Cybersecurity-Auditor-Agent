@@ -16,7 +16,6 @@ from tqdm import tqdm
 from auditor.config import settings
 from auditor.ingest.pdf_loader import chunk_documents, load_all_pdfs
 
-
 log = logging.getLogger(__name__)
 
 

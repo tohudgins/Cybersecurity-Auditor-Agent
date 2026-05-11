@@ -10,7 +10,6 @@ from auditor.tools.audit_logs import audit_logs
 from auditor.tools.audit_policy_pdf import audit_policy_text
 from auditor.tools.audit_text import audit_system_description
 
-
 log = logging.getLogger(__name__)
 
 
