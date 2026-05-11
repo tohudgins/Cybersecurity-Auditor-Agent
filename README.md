@@ -6,6 +6,8 @@
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Built with](https://img.shields.io/badge/built%20with-LangGraph%20%7C%20LangChain%20%7C%20Streamlit%20%7C%20OpenAI-orange)
+<!-- After deploy, replace YOUR-APP-URL with the real Streamlit Cloud URL: -->
+<!-- [![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://YOUR-APP-URL.streamlit.app) -->
 
 
 A local Streamlit app that puts a cybersecurity GRC analyst behind a chat box. Two modes:
@@ -139,6 +141,45 @@ streamlit run app.py
 ```
 
 Open the printed URL (defaults to `http://localhost:8501`).
+
+---
+
+## Run with Docker
+
+One command, full feature set (Trivy + Checkov + Bandit pre-installed):
+
+```powershell
+# Windows PowerShell
+$env:OPENAI_API_KEY="sk-..."
+docker compose up --build
+```
+```bash
+# macOS / Linux
+export OPENAI_API_KEY=sk-...
+docker compose up --build
+```
+
+Open http://localhost:8501. First boot embeds the framework PDFs (~1 min, ~$0.05 of OpenAI credits). The named volume persists the embeddings, so subsequent starts skip that step.
+
+The Docker image:
+- Base: `python:3.12-slim`
+- Installs Trivy from Aqua Security's official Debian repo
+- Installs Checkov + Bandit via pip (the `[scanners]` extra in `pyproject.toml`)
+- Entrypoint (`docker/entrypoint.sh`) builds the vector index on first boot only
+
+To run without docker-compose:
+```bash
+docker build -t cybersecurity-auditor .
+docker run -p 8501:8501 -e OPENAI_API_KEY=sk-... -v auditor-chromadb:/app/.chromadb cybersecurity-auditor
+```
+
+---
+
+## Live demo (Streamlit Community Cloud)
+
+> Live URL will be added here after the first deploy.
+
+A free hosted version runs the **compliance Q&A**, **policy PDF audit**, and **OSCAL export** paths. Codebase scanning (Trivy / Bandit on a directory) is not available on the cloud demo because Streamlit Cloud doesn't have Trivy on its PATH — the agent surfaces a graceful "Trivy not installed" info finding in that case. For the full feature set, use the local Docker setup above.
 
 ---
 

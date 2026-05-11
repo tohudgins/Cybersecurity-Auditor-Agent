@@ -1,0 +1,14 @@
+services:
+  auditor:
+    build: .
+    image: cybersecurity-auditor:latest
+    ports:
+      - "8501:8501"
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    volumes:
+      - chromadb:/app/.chromadb  # persist embeddings across restarts
+    restart: unless-stopped
+
+volumes:
+  chromadb:
