@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 Severity = Literal["info", "low", "medium", "high", "critical"]
-ArtifactKind = Literal["text", "policy_pdf", "config", "log"]
+ArtifactKind = Literal["text", "policy_pdf", "config", "log", "codebase"]
 
 
 class Finding(BaseModel):
@@ -35,4 +35,10 @@ class Artifact(BaseModel):
 
     kind: ArtifactKind
     name: str = Field(..., description="Original filename or 'pasted text'.")
-    content: str = Field(..., description="Raw text content; PDFs are pre-extracted before reaching here.")
+    content: str = Field(
+        ...,
+        description=(
+            "Raw text content; PDFs are pre-extracted before reaching here. "
+            "Exception: for kind='codebase', this holds the directory path to scan."
+        ),
+    )
