@@ -19,7 +19,7 @@ def test_root_ssh_login_flagged():
 
 def test_audit_logs_combines_heuristic_and_llm():
     log = "\n".join(
-        f"Failed password for admin from 9.9.9.9 port 22 ssh2" for _ in range(6)
+        "Failed password for admin from 9.9.9.9 port 22 ssh2" for _ in range(6)
     )
     out = audit_logs(log)
     assert any("Brute-force" in f.title for f in out)

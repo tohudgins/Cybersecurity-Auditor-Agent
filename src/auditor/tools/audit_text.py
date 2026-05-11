@@ -1,7 +1,7 @@
 """Audit a free-text system description against the framework corpus."""
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from auditor.models import Finding
 from auditor.prompts.audit import SYSTEM_DESCRIPTION_AUDIT_PROMPT

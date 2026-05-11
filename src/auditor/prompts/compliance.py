@@ -1,6 +1,5 @@
 from langchain_core.prompts import PromptTemplate
 
-
 COMPLIANCE_QA_PROMPT = PromptTemplate(
     input_variables=["context", "question"],
     template=(

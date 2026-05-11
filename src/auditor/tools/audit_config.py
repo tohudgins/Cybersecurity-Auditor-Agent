@@ -6,14 +6,13 @@ issues fast and let the model reason about the rest.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Callable, Sequence
 
 from auditor.models import Finding
 from auditor.prompts.audit import CONFIG_AUDIT_PROMPT
 from auditor.retrieval.retriever import format_docs, retrieve
 from auditor.tools._findings_llm import run_findings_chain
-
 
 # ---- File type detection ---------------------------------------------------
 

@@ -1,7 +1,7 @@
 """Retriever wrapper with optional framework metadata filtering."""
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from langchain_core.documents import Document
 

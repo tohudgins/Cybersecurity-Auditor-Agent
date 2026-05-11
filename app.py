@@ -19,7 +19,6 @@ from auditor.ingest.pdf_loader import FRAMEWORK_NAMES  # noqa: E402
 from auditor.models import Artifact  # noqa: E402
 from auditor.tools.audit_policy_pdf import extract_pdf_text  # noqa: E402
 
-
 # ---- Page setup ------------------------------------------------------------
 
 st.set_page_config(page_title="Cybersecurity Auditor", layout="wide")

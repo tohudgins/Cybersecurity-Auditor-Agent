@@ -1,6 +1,5 @@
 from langchain_core.prompts import PromptTemplate
 
-
 SYSTEM_DESCRIPTION_AUDIT_PROMPT = PromptTemplate(
     input_variables=["description", "context", "frameworks"],
     template=(

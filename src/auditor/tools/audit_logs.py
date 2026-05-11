@@ -3,13 +3,12 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from typing import Sequence
+from collections.abc import Sequence
 
 from auditor.models import Finding
 from auditor.prompts.audit import LOG_AUDIT_PROMPT
 from auditor.retrieval.retriever import format_docs, retrieve
 from auditor.tools._findings_llm import run_findings_chain
-
 
 _FAILED_LOGIN = re.compile(r"Failed password for (?:invalid user )?(\S+) from (\S+)", re.IGNORECASE)
 _ROOT_LOGIN = re.compile(r"Accepted (?:password|publickey) for root from", re.IGNORECASE)

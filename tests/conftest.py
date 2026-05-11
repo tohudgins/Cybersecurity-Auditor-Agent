@@ -13,8 +13,8 @@ os.environ.setdefault("OPENAI_API_KEY", "test-key-not-real")
 def _stub_llm_and_retriever(monkeypatch):
     """Replace `run_findings_chain` and `retrieve` everywhere they're used."""
     from auditor.models import Finding
-    from auditor.tools import _findings_llm, audit_config, audit_logs, audit_policy_pdf, audit_text
     from auditor.retrieval import retriever as retriever_mod
+    from auditor.tools import _findings_llm, audit_config, audit_logs, audit_policy_pdf, audit_text
 
     def _fake_findings(prompt, inputs, model=None, source_artifact=None):
         return [
