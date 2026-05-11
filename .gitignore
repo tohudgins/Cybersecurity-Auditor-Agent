@@ -49,7 +49,7 @@ dmypy.json
 *.pid
 
 # gitleaks scan output (working artifact, never commit)
-/gitleaks.json
+gitleaks.json
 
 # Claude Code per-user settings
 .claude/settings.local.json
