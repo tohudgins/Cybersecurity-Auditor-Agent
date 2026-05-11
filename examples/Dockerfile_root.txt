@@ -1,0 +1,18 @@
+# Deliberately weak Dockerfile for demo purposes.
+# Trigger findings: latest tag, no USER directive, ADD with URL, no healthcheck.
+#
+# Streamlit's file_uploader rejects extension-less files, so this is named
+# `Dockerfile_root.txt`. The audit_config detector matches "dockerfile" in
+# the lowercased filename.
+
+FROM python:latest
+
+ADD https://example.com/install.sh /tmp/install.sh
+RUN bash /tmp/install.sh
+
+WORKDIR /app
+COPY . /app
+RUN pip install -r requirements.txt
+
+EXPOSE 8000
+CMD ["python", "main.py"]

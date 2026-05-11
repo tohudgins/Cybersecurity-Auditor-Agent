@@ -1,0 +1,39 @@
+ACME CORP — INFORMATION SECURITY POLICY
+========================================
+
+1. Purpose
+
+This policy establishes baseline security expectations for ACME Corp employees
+and contractors handling company data.
+
+2. Scope
+
+This policy applies to all employees, contractors, and third parties who access
+ACME systems or handle ACME data.
+
+3. Account Management
+
+All employees must use a unique username and password to access company systems.
+Passwords must be at least 8 characters long. Employees should not share their
+credentials.
+
+4. Acceptable Use
+
+Company systems and devices may only be used for business purposes. Personal use
+is permitted on a limited basis.
+
+5. Data Handling
+
+Employees must protect confidential company data and not share it with
+unauthorized parties.
+
+6. Reporting
+
+Employees who suspect a security issue should notify their manager.
+
+----
+
+(Note for the demo: this is a deliberately weak policy. It omits MFA, incident
+response procedures, audit logging requirements, encryption-at-rest standards,
+data classification, vendor risk management, and access reviews. Run the auditor
+against this to see those gaps surface.)

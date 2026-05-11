@@ -1,0 +1,64 @@
+[project]
+name = "cybersecurity-auditor"
+version = "0.1.0"
+description = "Multi-agent cybersecurity auditing assistant — answers compliance questions and evaluates user systems against NIST, CIS, OWASP, MITRE ATT&CK, and CompTIA standards."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Tyler Hudgins" }]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "langchain>=0.3.0",
+    "langchain-core>=0.3.0",
+    "langchain-openai>=0.2.0",
+    "langchain-chroma>=0.1.4",
+    "langchain-community>=0.3.0",
+    "langgraph>=0.2.40",
+    "chromadb>=0.5.0",
+    "openai>=1.50.0",
+    "pypdf>=4.3.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.4.0",
+    "python-dotenv>=1.0.1",
+    "tqdm>=4.66.0",
+    "streamlit>=1.38.0",
+    "pyyaml>=6.0.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-mock>=3.14.0",
+    "pre-commit>=3.7.0",
+    "ruff>=0.6.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501", "B008"]  # line length already enforced; allow Depends()-style defaults
+
+[tool.ruff.lint.per-file-ignores]
+"app.py" = ["E402"]  # sys.path manipulation must precede imports
+"tests/*" = ["E402"]
