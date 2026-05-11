@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from auditor.models import Finding
 
@@ -29,7 +29,7 @@ def _stable_uuid(*parts: str) -> str:
 
 
 def _now_iso() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _observation(finding: Finding, run_id: str) -> dict:
