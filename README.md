@@ -2,11 +2,10 @@
 
 > Multi-agent cybersecurity auditor: ask compliance questions and audit your systems against NIST, CIS, OWASP, MITRE ATT&CK, and CompTIA Security+.
 
+![CI](https://github.com/tohudgins/Cybersecurity-Auditor-Agent/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Built with](https://img.shields.io/badge/built%20with-LangGraph%20%7C%20LangChain%20%7C%20Streamlit%20%7C%20OpenAI-orange)
-<!-- After first push, replace <user>/<repo> below: -->
-<!-- ![CI](https://github.com/<user>/<repo>/actions/workflows/ci.yml/badge.svg) -->
 
 
 A local Streamlit app that puts a cybersecurity GRC analyst behind a chat box. Two modes:
