@@ -13,10 +13,12 @@ A local Streamlit app that puts a cybersecurity GRC analyst behind a chat box. T
 - **Compliance Q&A** — ask any question about NIST CSF, NIST SP 800-53/37/30, CIS Controls v8.1, OWASP ASVS, MITRE ATT&CK, or CompTIA Security+ and get a cited answer pulling directly from the framework PDFs.
 - **System auditing** — upload a config file, log sample, internal policy PDF, codebase path, or paste a free-text system description; the agent runs heuristic + LLM checks, scans dependencies with **Trivy** for CVEs, runs **Bandit** for Python SAST, runs **Checkov** for Terraform / Kubernetes IaC scanning, and returns a Markdown audit report with severity-ranked findings tied to specific framework controls.
 
-Every finding is enriched with two threat-intel layers:
+Every finding is enriched with industry-standard context:
 
 - **CISA KEV** — CVEs in CISA's [Known Exploited Vulnerabilities](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) catalog get bumped to `critical` severity with a `[KEV - actively exploited]` badge.
 - **MITRE ATT&CK** — each finding is tagged with the relevant [ATT&CK techniques](https://attack.mitre.org/techniques/enterprise/) (e.g., a brute-force log finding → `T1110.001`, an open security group → `T1190`).
+- **CVSS v3** — CVE findings carry the NVD base score and vector string, rendered alongside qualitative severity (e.g., `9.8 (Critical)`).
+- **OSCAL export** — every audit run is downloadable as [OSCAL Assessment Results JSON](https://pages.nist.gov/OSCAL/reference/latest/assessment-results/), the NIST format that FedRAMP / Trestle / RegScale consume.
 
 ---
 
@@ -157,6 +159,7 @@ Open the printed URL (defaults to `http://localhost:8501`).
 │   ├── retrieval/                  # vector retrieval with framework filtering
 │   ├── tools/                      # compliance_qa, framework_summary, audit_*
 │   ├── enrichment/                 # CISA KEV lookup + MITRE ATT&CK technique tagging
+│   ├── oscal/                      # NIST OSCAL Assessment Results exporter
 │   ├── prompts/                    # PromptTemplates kept separate from logic
 │   └── agents/                     # supervisor, compliance, audit, reporting + graph wiring
 └── tests/                          # pytest smoke tests (LLM + retriever stubbed)
@@ -212,8 +215,6 @@ The auditor degrades gracefully if any scanner is missing — it surfaces an inf
 
 Deliberate v1 cuts; happy to revisit:
 
-- **[OSCAL](https://pages.nist.gov/OSCAL/) export** — emit audit results in NIST's machine-readable assessment format (the one FedRAMP / GRC platforms consume).
-- **CVSS scoring** — display CVSS base score alongside qualitative severity on CVE findings.
 - **Cross-framework knowledge graph** — Neo4j with `MAPS_TO` / `SIMILAR` relationships between controls in different frameworks.
 - **Live cloud-API scanning** — AWS Config / Azure Policy ingestion instead of file uploads.
 - **Multi-user persistence** — audit history, RBAC, shareable report links.

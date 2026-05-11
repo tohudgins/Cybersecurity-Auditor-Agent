@@ -11,12 +11,16 @@ from pathlib import Path
 # Make `src/` importable when running via `streamlit run app.py`.
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
+import json  # noqa: E402
+from datetime import UTC, datetime  # noqa: E402
+
 import streamlit as st  # noqa: E402
 from langchain_core.messages import AIMessage, HumanMessage  # noqa: E402
 
 from auditor.agents.graph import AUDITOR_GRAPH  # noqa: E402
 from auditor.ingest.pdf_loader import FRAMEWORK_NAMES  # noqa: E402
 from auditor.models import Artifact  # noqa: E402
+from auditor.oscal.exporter import to_oscal_assessment_results  # noqa: E402
 from auditor.tools.audit_policy_pdf import extract_pdf_text  # noqa: E402
 
 # ---- Page setup ------------------------------------------------------------
@@ -136,3 +140,15 @@ if prompt:
         )
         st.markdown(answer)
         st.session_state.messages.append(AIMessage(content=answer))
+
+        findings = result.get("findings") or []
+        if findings:
+            oscal_doc = to_oscal_assessment_results(findings)
+            timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+            st.download_button(
+                label="Export OSCAL Assessment Results",
+                data=json.dumps(oscal_doc, indent=2),
+                file_name=f"oscal-assessment-results-{timestamp}.json",
+                mime="application/json",
+                help="NIST OSCAL 1.1.2 Assessment Results JSON. Ingestible by FedRAMP / Trestle / RegScale.",
+            )

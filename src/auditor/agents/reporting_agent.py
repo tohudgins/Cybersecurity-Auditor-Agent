@@ -33,6 +33,13 @@ def _render_finding(idx: int, f: Finding) -> str:
         if f.control_id:
             framework_line += f" — {f.control_id}"
         framework_line += "\n"
+    cvss_line = ""
+    if f.cvss_score is not None:
+        qual = _cvss_qualifier(f.cvss_score)
+        cvss_line = f"- **CVSS v3 base score:** {f.cvss_score:.1f} ({qual})"
+        if f.cvss_vector:
+            cvss_line += f" — `{f.cvss_vector}`"
+        cvss_line += "\n"
     attack_line = ""
     if f.attack_techniques:
         attack_line = f"- **MITRE ATT&CK:** {', '.join(f.attack_techniques)}\n"
@@ -40,11 +47,25 @@ def _render_finding(idx: int, f: Finding) -> str:
     return (
         f"### {idx}. {badge} {f.title}\n"
         f"{framework_line}"
+        f"{cvss_line}"
         f"{attack_line}"
         f"{source_line}"
         f"- **Evidence:** {f.evidence}\n"
         f"- **Recommendation:** {f.recommendation}\n"
     )
+
+
+def _cvss_qualifier(score: float) -> str:
+    """Map a CVSS v3 base score to its qualitative rating per spec."""
+    if score >= 9.0:
+        return "Critical"
+    if score >= 7.0:
+        return "High"
+    if score >= 4.0:
+        return "Medium"
+    if score > 0.0:
+        return "Low"
+    return "None"
 
 
 def _executive_summary(findings: list[Finding], frameworks: list[str] | None) -> str:
