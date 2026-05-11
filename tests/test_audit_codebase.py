@@ -92,3 +92,76 @@ def test_audit_codebase_empty_results(monkeypatch, tmp_path):
         lambda *_, **__: _fake_run(stdout=json.dumps({"SchemaVersion": 2, "Results": []})),
     )
     assert ac.audit_codebase(tmp_path) == []
+
+
+# ---- Bandit -----------------------------------------------------------------
+
+_FAKE_BANDIT_OUTPUT = {
+    "errors": [],
+    "results": [
+        {
+            "code": "subprocess.run(cmd, shell=True)",
+            "filename": "/scan/app/handlers.py",
+            "issue_confidence": "HIGH",
+            "issue_cwe": {"id": 78, "link": "https://cwe.mitre.org/data/definitions/78.html"},
+            "issue_severity": "HIGH",
+            "issue_text": "subprocess call with shell=True identified, security issue.",
+            "line_number": 42,
+            "more_info": "https://bandit.readthedocs.io/en/latest/plugins/b602_subprocess_popen_with_shell_equals_true.html",
+            "test_id": "B602",
+            "test_name": "subprocess_popen_with_shell_equals_true",
+        },
+    ],
+}
+
+
+def test_audit_codebase_runs_bandit_when_python_present(monkeypatch, tmp_path):
+    # Create a .py file so _has_python_files returns True.
+    (tmp_path / "app.py").write_text("import subprocess\nsubprocess.run('x', shell=True)\n")
+
+    def _route(cmd, *_a, **_kw):
+        if cmd and cmd[0] == "bandit":
+            return _fake_run(stdout=json.dumps(_FAKE_BANDIT_OUTPUT))
+        # default to trivy with no findings
+        return _fake_run(stdout=json.dumps({"SchemaVersion": 2, "Results": []}))
+
+    monkeypatch.setattr(subprocess, "run", _route)
+
+    findings = ac.audit_codebase(tmp_path)
+    bandit_findings = [f for f in findings if (f.control_id or "").startswith(("CWE-", "B"))]
+    assert len(bandit_findings) == 1
+    f = bandit_findings[0]
+    assert "B602" in f.title
+    assert f.severity == "high"
+    assert f.framework == "OWASP ASVS 4.0.3"
+    assert f.control_id == "CWE-78"
+    assert "shell=True" in f.evidence
+
+
+def test_audit_codebase_skips_bandit_when_no_python(monkeypatch, tmp_path):
+    # tmp_path has no .py files. Bandit should NOT be invoked.
+    called: dict[str, bool] = {"bandit": False}
+
+    def _route(cmd, *_a, **_kw):
+        if cmd and cmd[0] == "bandit":
+            called["bandit"] = True
+        return _fake_run(stdout=json.dumps({"SchemaVersion": 2, "Results": []}))
+
+    monkeypatch.setattr(subprocess, "run", _route)
+
+    ac.audit_codebase(tmp_path)
+    assert called["bandit"] is False
+
+
+def test_audit_codebase_handles_missing_bandit(monkeypatch, tmp_path):
+    (tmp_path / "app.py").write_text("pass\n")
+
+    def _route(cmd, *_a, **_kw):
+        if cmd and cmd[0] == "bandit":
+            raise FileNotFoundError("bandit not found")
+        return _fake_run(stdout=json.dumps({"SchemaVersion": 2, "Results": []}))
+
+    monkeypatch.setattr(subprocess, "run", _route)
+    findings = ac.audit_codebase(tmp_path)
+    bandit_msg = [f for f in findings if "Bandit not installed" in f.title]
+    assert len(bandit_msg) == 1

@@ -1,4 +1,16 @@
-from auditor.tools.audit_config import _check_dockerfile, _check_sshd, audit_config, detect_config_kind
+import json
+import subprocess
+from types import SimpleNamespace
+
+from auditor.tools import audit_config as ac
+from auditor.tools.audit_config import (
+    _check_dockerfile,
+    _check_kubernetes_regex,
+    _check_sshd,
+    _check_terraform_regex,
+    audit_config,
+    detect_config_kind,
+)
 
 
 def test_detect_config_kind_handles_common_files():
@@ -31,3 +43,109 @@ def test_audit_config_returns_combined_heuristic_and_llm_findings():
     assert any(f.title.startswith("Root SSH login") for f in out)
     assert any(f.title == "LLM stub finding" for f in out)
     assert all(f.source_artifact == "sshd_config" for f in out)
+
+
+# ---- Checkov path ---------------------------------------------------------
+
+_FAKE_CHECKOV_OUTPUT = {
+    "check_type": "terraform",
+    "results": {
+        "failed_checks": [
+            {
+                "check_id": "CKV_AWS_24",
+                "check_name": "Ensure no security groups allow ingress from 0.0.0.0:0 to port 22",
+                "check_result": {"result": "FAILED"},
+                "file_path": "/tmp/abc.tf",
+                "file_line_range": [10, 20],
+                "resource": "aws_security_group.web",
+                "guideline": "https://docs.bridgecrew.io/CKV_AWS_24",
+                "severity": "MEDIUM",
+            },
+        ]
+    },
+}
+
+
+def _fake_run(stdout: str = "", returncode: int = 0, stderr: str = ""):
+    return SimpleNamespace(stdout=stdout, returncode=returncode, stderr=stderr)
+
+
+def test_terraform_uses_checkov_when_available(monkeypatch):
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_a, **_kw: _fake_run(stdout=json.dumps(_FAKE_CHECKOV_OUTPUT)),
+    )
+    out = audit_config("resource \"aws_security_group\" \"web\" {}", "main.tf")
+    titles = [f.title for f in out]
+    assert any("CKV_AWS_24" in t for t in titles)
+    # Should NOT include the regex fallback finding when Checkov ran.
+    assert not any("falling back to regex" in t for t in titles)
+
+
+def test_terraform_falls_back_to_regex_when_checkov_missing(monkeypatch):
+    def _raise(*_a, **_kw):
+        raise FileNotFoundError("checkov not found")
+
+    monkeypatch.setattr(subprocess, "run", _raise)
+    out = audit_config(
+        'resource "aws_security_group" "web" { cidr_blocks = ["0.0.0.0/0"] }',
+        "main.tf",
+    )
+    titles = [f.title for f in out]
+    assert any("Checkov not installed" in t for t in titles)
+    assert any("0.0.0.0/0" in t for t in titles)
+
+
+def test_kubernetes_regex_still_works_standalone():
+    yaml = "spec:\n  containers:\n  - name: app\n    securityContext:\n      privileged: true\n"
+    findings = _check_kubernetes_regex(yaml)
+    assert any("privileged" in f.title.lower() for f in findings)
+
+
+def test_terraform_regex_still_works_standalone():
+    tf = 'resource "aws_security_group" "x" { ingress { cidr_blocks = ["0.0.0.0/0"] } }'
+    findings = _check_terraform_regex(tf)
+    assert any("0.0.0.0/0" in f.title for f in findings)
+
+
+def test_checkov_finding_severity_mapping(monkeypatch):
+    payload = {
+        "results": {
+            "failed_checks": [
+                {"check_id": "CKV_HIGH", "check_name": "Critical thing", "severity": "CRITICAL"},
+                {"check_id": "CKV_LOW", "check_name": "Low thing", "severity": "LOW"},
+                {"check_id": "CKV_NONE", "check_name": "Missing severity"},
+            ]
+        }
+    }
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_kw: _fake_run(stdout=json.dumps(payload)))
+    out = audit_config("foo", "main.tf")
+    sev_by_id = {f.control_id: f.severity for f in out if (f.control_id or "").startswith("CKV_")}
+    assert sev_by_id["CKV_HIGH"] == "critical"
+    assert sev_by_id["CKV_LOW"] == "low"
+    assert sev_by_id["CKV_NONE"] == "medium"  # default when severity field absent
+
+
+def test_checkov_handles_list_shaped_output(monkeypatch):
+    """Some Checkov versions emit a list of framework dicts instead of one dict."""
+    payload = [_FAKE_CHECKOV_OUTPUT]
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_kw: _fake_run(stdout=json.dumps(payload)))
+    out = audit_config("foo", "main.tf")
+    assert any("CKV_AWS_24" in f.title for f in out)
+
+
+def test_run_checkov_silent_on_clean_input(monkeypatch):
+    """Empty failed_checks → no Checkov findings (only LLM stub from audit_config)."""
+    payload = {"results": {"failed_checks": []}}
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_kw: _fake_run(stdout=json.dumps(payload)))
+    out = audit_config("foo", "main.tf")
+    # Only the LLM stub finding should remain
+    titles = [f.title for f in out]
+    assert "LLM stub finding" in titles
+    assert not any(t.startswith("[CKV_") for t in titles)
+
+
+def test_module_exports_ac_for_completeness():
+    """Defensive: confirm the public function is still accessible via module import."""
+    assert callable(ac.audit_config)
