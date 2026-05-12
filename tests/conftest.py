@@ -1,4 +1,4 @@
-"""Test fixtures: stub out the LLM and retriever so tests never hit the network."""
+"""Test fixtures: stub out the LLM, retriever, and enrichment network calls."""
 from __future__ import annotations
 
 import os
@@ -11,7 +11,8 @@ os.environ.setdefault("OPENAI_API_KEY", "test-key-not-real")
 
 @pytest.fixture(autouse=True)
 def _stub_llm_and_retriever(monkeypatch):
-    """Replace `run_findings_chain`, `retrieve`, and KEV network calls."""
+    """Replace `run_findings_chain`, `retrieve`, KEV, and EPSS network calls."""
+    from auditor.enrichment import epss as epss_mod
     from auditor.enrichment import kev as kev_mod
     from auditor.models import Finding
     from auditor.retrieval import retriever as retriever_mod
@@ -41,6 +42,6 @@ def _stub_llm_and_retriever(monkeypatch):
         if hasattr(module, "retrieve"):
             monkeypatch.setattr(module, "retrieve", _fake_retrieve)
 
-    # Default: KEV lookup returns False so tests don't hit the network.
-    # Individual tests can monkeypatch `is_kev` to True/False as needed.
+    # Default: KEV / EPSS lookups return safe defaults so tests don't hit the network.
     monkeypatch.setattr(kev_mod, "is_kev", lambda _cve: False)
+    monkeypatch.setattr(epss_mod, "epss_score", lambda _cve: None)

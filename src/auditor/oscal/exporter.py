@@ -50,16 +50,23 @@ def _observation(finding: Finding, run_id: str) -> dict:
 
 
 def _finding_props(finding: Finding) -> list[dict]:
-    """Emit OSCAL `prop` entries for our non-standard fields (CVSS, KEV, ATT&CK)."""
+    """Emit OSCAL `prop` entries for our non-standard fields (CVSS, KEV, ATT&CK, EPSS, mappings)."""
     props: list[dict] = [{"name": "severity", "value": finding.severity}]
     if finding.cvss_score is not None:
         props.append({"name": "cvss-v3-base-score", "value": f"{finding.cvss_score:.1f}"})
     if finding.cvss_vector:
         props.append({"name": "cvss-v3-vector", "value": finding.cvss_vector})
+    if finding.epss_score is not None:
+        props.append({"name": "epss-score", "value": f"{finding.epss_score:.5f}"})
+    if finding.epss_percentile is not None:
+        props.append({"name": "epss-percentile", "value": f"{finding.epss_percentile:.5f}"})
     if finding.kev:
         props.append({"name": "cisa-kev", "value": "true"})
     for technique in finding.attack_techniques:
         props.append({"name": "mitre-attack-technique", "value": technique})
+    for fw, control_ids in finding.mapped_controls.items():
+        for cid in control_ids:
+            props.append({"name": "mapped-control", "value": cid, "class": fw})
     return props
 
 

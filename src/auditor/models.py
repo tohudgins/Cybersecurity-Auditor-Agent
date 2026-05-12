@@ -44,6 +44,21 @@ class Finding(BaseModel):
         default=None,
         description="CVSS v3 vector string (e.g., 'CVSS:3.1/AV:N/AC:L/...'). None if not applicable.",
     )
+    epss_score: float | None = Field(
+        default=None,
+        description="EPSS probability (0.0-1.0) that the underlying CVE will be exploited in the next 30 days.",
+    )
+    epss_percentile: float | None = Field(
+        default=None,
+        description="EPSS percentile (0.0-1.0) — fraction of CVEs this one outranks today.",
+    )
+    mapped_controls: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description=(
+            "Cross-framework mappings populated by enrichment, e.g. "
+            "{'NIST CSF 2.0': ['PR.AA-05'], 'CIS Controls v8.1': ['5.4']}."
+        ),
+    )
 
 
 class Artifact(BaseModel):

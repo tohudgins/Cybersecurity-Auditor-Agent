@@ -1,0 +1,217 @@
+{
+  "_meta": {
+    "description": "Cross-framework control mappings, NIST SP 800-53 Rev. 5 as the anchor. Derived from NIST OLIR informative references (https://csrc.nist.gov/projects/olir), the CIS Controls v8.1 mapping appendix, and AICPA SOC 2 / PCI SSC public guidance. Hand-curated subset focused on controls this agent commonly cites in audit findings.",
+    "anchor": "NIST SP 800-53 Rev. 5",
+    "version": "1.0",
+    "sources": [
+      "NIST SP 800-53 Rev. 5 Appendix F (control catalog)",
+      "NIST OLIR — NIST CSF 2.0 to SP 800-53 Rev. 5 mapping",
+      "NIST OLIR — ISO/IEC 27001:2022 to SP 800-53 Rev. 5",
+      "CIS Controls v8.1 — Mappings to other frameworks",
+      "PCI DSS v4.0.1 — Reporting templates control objectives",
+      "AICPA SOC 2 Trust Services Criteria (TSP Section 100, 2017)"
+    ]
+  },
+  "mappings": {
+    "AC-2": {
+      "title": "Account Management",
+      "NIST CSF 2.0": ["PR.AA-01", "PR.AA-02", "PR.AA-05"],
+      "CIS Controls v8.1": ["5.1", "5.2", "5.3", "5.4", "5.6"],
+      "ISO 27001:2022": ["A.5.16", "A.5.18", "A.8.2"],
+      "PCI DSS v4.0.1": ["8.2", "8.3"],
+      "SOC 2 TSC": ["CC6.1", "CC6.2", "CC6.3"]
+    },
+    "AC-3": {
+      "title": "Access Enforcement",
+      "NIST CSF 2.0": ["PR.AA-05"],
+      "CIS Controls v8.1": ["3.3", "6.1", "6.8"],
+      "ISO 27001:2022": ["A.5.15", "A.8.3"],
+      "PCI DSS v4.0.1": ["7.2", "7.3"],
+      "SOC 2 TSC": ["CC6.1", "CC6.3"]
+    },
+    "AC-4": {
+      "title": "Information Flow Enforcement",
+      "NIST CSF 2.0": ["PR.IR-01"],
+      "CIS Controls v8.1": ["12.1", "12.2", "13.4"],
+      "ISO 27001:2022": ["A.8.22", "A.8.23"],
+      "PCI DSS v4.0.1": ["1.2", "1.3", "1.4"],
+      "SOC 2 TSC": ["CC6.6"]
+    },
+    "AC-6": {
+      "title": "Least Privilege",
+      "NIST CSF 2.0": ["PR.AA-05"],
+      "CIS Controls v8.1": ["5.4", "6.8"],
+      "ISO 27001:2022": ["A.8.2", "A.8.3"],
+      "PCI DSS v4.0.1": ["7.2"],
+      "SOC 2 TSC": ["CC6.1", "CC6.3"]
+    },
+    "AC-7": {
+      "title": "Unsuccessful Logon Attempts",
+      "NIST CSF 2.0": ["PR.AA-04"],
+      "CIS Controls v8.1": ["6.2"],
+      "ISO 27001:2022": ["A.8.5"],
+      "PCI DSS v4.0.1": ["8.3.4"],
+      "SOC 2 TSC": ["CC6.1"]
+    },
+    "AC-17": {
+      "title": "Remote Access",
+      "NIST CSF 2.0": ["PR.AA-03", "PR.AA-06"],
+      "CIS Controls v8.1": ["4.4", "12.7", "13.5"],
+      "ISO 27001:2022": ["A.6.7", "A.8.1"],
+      "PCI DSS v4.0.1": ["8.5", "11.4"],
+      "SOC 2 TSC": ["CC6.6", "CC6.7"]
+    },
+    "AU-2": {
+      "title": "Event Logging",
+      "NIST CSF 2.0": ["DE.CM-01", "DE.CM-03"],
+      "CIS Controls v8.1": ["8.1", "8.2", "8.5"],
+      "ISO 27001:2022": ["A.8.15"],
+      "PCI DSS v4.0.1": ["10.2"],
+      "SOC 2 TSC": ["CC7.2"]
+    },
+    "AU-12": {
+      "title": "Audit Record Generation",
+      "NIST CSF 2.0": ["DE.CM-01", "DE.CM-09"],
+      "CIS Controls v8.1": ["8.5", "8.6", "8.8"],
+      "ISO 27001:2022": ["A.8.15", "A.8.16"],
+      "PCI DSS v4.0.1": ["10.2", "10.3"],
+      "SOC 2 TSC": ["CC7.2"]
+    },
+    "CM-2": {
+      "title": "Baseline Configuration",
+      "NIST CSF 2.0": ["PR.PS-01"],
+      "CIS Controls v8.1": ["4.1", "4.2"],
+      "ISO 27001:2022": ["A.8.9"],
+      "PCI DSS v4.0.1": ["2.2"],
+      "SOC 2 TSC": ["CC7.1", "CC8.1"]
+    },
+    "CM-6": {
+      "title": "Configuration Settings",
+      "NIST CSF 2.0": ["PR.PS-01"],
+      "CIS Controls v8.1": ["4.1", "4.2", "4.6", "4.7"],
+      "ISO 27001:2022": ["A.8.9"],
+      "PCI DSS v4.0.1": ["2.2"],
+      "SOC 2 TSC": ["CC7.1"]
+    },
+    "CP-9": {
+      "title": "System Backup",
+      "NIST CSF 2.0": ["RC.RP-01", "PR.DS-11"],
+      "CIS Controls v8.1": ["11.1", "11.2", "11.3", "11.5"],
+      "ISO 27001:2022": ["A.8.13"],
+      "PCI DSS v4.0.1": ["3.5"],
+      "SOC 2 TSC": ["A1.2", "A1.3"]
+    },
+    "IA-2": {
+      "title": "Identification and Authentication (Organizational Users)",
+      "NIST CSF 2.0": ["PR.AA-01", "PR.AA-03"],
+      "CIS Controls v8.1": ["6.3", "6.4", "6.5"],
+      "ISO 27001:2022": ["A.5.17", "A.8.5"],
+      "PCI DSS v4.0.1": ["8.3", "8.4", "8.5"],
+      "SOC 2 TSC": ["CC6.1", "CC6.2"]
+    },
+    "IA-5": {
+      "title": "Authenticator Management",
+      "NIST CSF 2.0": ["PR.AA-01"],
+      "CIS Controls v8.1": ["5.2", "6.3", "6.4"],
+      "ISO 27001:2022": ["A.5.17"],
+      "PCI DSS v4.0.1": ["8.3"],
+      "SOC 2 TSC": ["CC6.1"]
+    },
+    "IR-4": {
+      "title": "Incident Handling",
+      "NIST CSF 2.0": ["RS.MA-01", "RS.AN-03", "RS.MI-01"],
+      "CIS Controls v8.1": ["17.1", "17.2", "17.3"],
+      "ISO 27001:2022": ["A.5.24", "A.5.25", "A.5.26"],
+      "PCI DSS v4.0.1": ["12.10"],
+      "SOC 2 TSC": ["CC7.3", "CC7.4"]
+    },
+    "IR-8": {
+      "title": "Incident Response Plan",
+      "NIST CSF 2.0": ["RS.MA-01"],
+      "CIS Controls v8.1": ["17.4", "17.5", "17.6"],
+      "ISO 27001:2022": ["A.5.24"],
+      "PCI DSS v4.0.1": ["12.10"],
+      "SOC 2 TSC": ["CC7.3"]
+    },
+    "RA-5": {
+      "title": "Vulnerability Monitoring and Scanning",
+      "NIST CSF 2.0": ["ID.RA-01", "ID.RA-08"],
+      "CIS Controls v8.1": ["7.1", "7.5", "7.6"],
+      "ISO 27001:2022": ["A.8.8"],
+      "PCI DSS v4.0.1": ["11.3"],
+      "SOC 2 TSC": ["CC4.1", "CC7.1"]
+    },
+    "SA-11": {
+      "title": "Developer Testing and Evaluation",
+      "NIST CSF 2.0": ["ID.RA-01", "PR.PS-06"],
+      "CIS Controls v8.1": ["16.11", "16.12", "16.13"],
+      "ISO 27001:2022": ["A.8.28"],
+      "PCI DSS v4.0.1": ["6.3.1"],
+      "SOC 2 TSC": ["CC8.1"]
+    },
+    "SC-7": {
+      "title": "Boundary Protection",
+      "NIST CSF 2.0": ["PR.IR-01"],
+      "CIS Controls v8.1": ["12.2", "12.3", "13.4", "13.10"],
+      "ISO 27001:2022": ["A.8.22", "A.8.23"],
+      "PCI DSS v4.0.1": ["1.2", "1.3", "1.4"],
+      "SOC 2 TSC": ["CC6.6"]
+    },
+    "SC-8": {
+      "title": "Transmission Confidentiality and Integrity",
+      "NIST CSF 2.0": ["PR.DS-02"],
+      "CIS Controls v8.1": ["3.10"],
+      "ISO 27001:2022": ["A.8.20", "A.8.24"],
+      "PCI DSS v4.0.1": ["4.2"],
+      "SOC 2 TSC": ["CC6.7"]
+    },
+    "SC-12": {
+      "title": "Cryptographic Key Establishment and Management",
+      "NIST CSF 2.0": ["PR.DS-01", "PR.DS-02"],
+      "CIS Controls v8.1": ["3.11"],
+      "ISO 27001:2022": ["A.8.24"],
+      "PCI DSS v4.0.1": ["3.6", "3.7"],
+      "SOC 2 TSC": ["CC6.1"]
+    },
+    "SC-13": {
+      "title": "Cryptographic Protection",
+      "NIST CSF 2.0": ["PR.DS-01", "PR.DS-02"],
+      "CIS Controls v8.1": ["3.10", "3.11"],
+      "ISO 27001:2022": ["A.8.24"],
+      "PCI DSS v4.0.1": ["3.5", "4.2"],
+      "SOC 2 TSC": ["CC6.1", "CC6.7"]
+    },
+    "SC-28": {
+      "title": "Protection of Information at Rest",
+      "NIST CSF 2.0": ["PR.DS-01"],
+      "CIS Controls v8.1": ["3.11"],
+      "ISO 27001:2022": ["A.8.24"],
+      "PCI DSS v4.0.1": ["3.5"],
+      "SOC 2 TSC": ["CC6.1"]
+    },
+    "SI-2": {
+      "title": "Flaw Remediation",
+      "NIST CSF 2.0": ["ID.RA-01", "PR.PS-02"],
+      "CIS Controls v8.1": ["7.3", "7.4", "7.7"],
+      "ISO 27001:2022": ["A.8.8"],
+      "PCI DSS v4.0.1": ["6.3.3", "11.3"],
+      "SOC 2 TSC": ["CC7.1"]
+    },
+    "SI-4": {
+      "title": "System Monitoring",
+      "NIST CSF 2.0": ["DE.CM-01", "DE.CM-09"],
+      "CIS Controls v8.1": ["13.1", "13.6", "13.11"],
+      "ISO 27001:2022": ["A.8.16"],
+      "PCI DSS v4.0.1": ["10.4", "11.5"],
+      "SOC 2 TSC": ["CC7.2", "CC7.3"]
+    },
+    "SI-10": {
+      "title": "Information Input Validation",
+      "NIST CSF 2.0": ["PR.PS-06"],
+      "CIS Controls v8.1": ["16.10"],
+      "ISO 27001:2022": ["A.8.28"],
+      "PCI DSS v4.0.1": ["6.2.4"],
+      "SOC 2 TSC": ["CC8.1"]
+    }
+  }
+}

@@ -133,7 +133,7 @@ def test_audit_codebase_runs_bandit_when_python_present(monkeypatch, tmp_path):
     f = bandit_findings[0]
     assert "B602" in f.title
     assert f.severity == "high"
-    assert f.framework == "OWASP ASVS 4.0.3"
+    assert f.framework == "OWASP ASVS 5.0"
     assert f.control_id == "CWE-78"
     assert "shell=True" in f.evidence
 

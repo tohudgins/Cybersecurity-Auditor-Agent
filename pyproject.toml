@@ -29,6 +29,7 @@ dependencies = [
     "tqdm>=4.66.0",
     "streamlit>=1.38.0",
     "pyyaml>=6.0.2",
+    "rank-bm25>=0.2.2",
 ]
 
 [project.optional-dependencies]
