@@ -14,7 +14,8 @@ from langchain_openai import OpenAIEmbeddings
 from tqdm import tqdm
 
 from auditor.config import settings
-from auditor.ingest.pdf_loader import chunk_documents, load_all_pdfs
+from auditor.ingest.pdf_loader import chunk_documents, load_all_documents
+from auditor.ingest.web_fetcher import fetch_all
 
 log = logging.getLogger(__name__)
 
@@ -37,10 +38,10 @@ def get_vectorstore() -> Chroma:
 def build_index(batch_size: int = 100) -> int:
     settings.chroma_dir.mkdir(parents=True, exist_ok=True)
 
-    pages = load_all_pdfs()
-    print(f"Loaded {len(pages)} pages from {settings.data_dir}.")
+    docs = load_all_documents()
+    print(f"Loaded {len(docs)} source documents from {settings.data_dir} (PDFs + markdown).")
 
-    chunks = chunk_documents(pages)
+    chunks = chunk_documents(docs)
     print(f"Split into {len(chunks)} chunks (size={settings.chunk_size}, overlap={settings.chunk_overlap}).")
 
     store = get_vectorstore()
@@ -51,11 +52,32 @@ def build_index(batch_size: int = 100) -> int:
     return len(chunks)
 
 
+def fetch_web_sources(force: bool = False) -> None:
+    web_dir = settings.data_dir / "web"
+    print(f"Fetching web sources into {web_dir}...")
+    results = fetch_all(web_dir, force=force)
+    for name, (written, skipped) in results.items():
+        print(f"  {name}: {written} written, {skipped} skipped (already cached).")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--rebuild", action="store_true", help="Build the index from PDFs.")
+    parser.add_argument("--rebuild", action="store_true", help="Build the index from PDFs + markdown.")
+    parser.add_argument(
+        "--fetch-web",
+        action="store_true",
+        help="Fetch OWASP Top 10 / Cheat Sheet markdown from GitHub into data/web/.",
+    )
+    parser.add_argument(
+        "--force-fetch",
+        action="store_true",
+        help="With --fetch-web: re-download files even if already cached.",
+    )
     parser.add_argument("--probe", type=str, default=None, help="Run a sanity retrieval for the given query.")
     args = parser.parse_args()
+
+    if args.fetch_web:
+        fetch_web_sources(force=args.force_fetch)
 
     if args.rebuild:
         build_index()

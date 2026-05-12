@@ -14,7 +14,7 @@ import logging
 import subprocess
 from pathlib import Path
 
-from auditor.enrichment import kev
+from auditor.enrichment import epss, kev
 from auditor.models import Finding
 
 log = logging.getLogger(__name__)
@@ -106,6 +106,8 @@ def _vuln_to_finding(vuln: dict, target: str, scanned_path: str) -> Finding:
         title = f"{pkg} {installed}: {cve}"
 
     cvss_score, cvss_vector = _extract_cvss(vuln)
+    epss_pair = epss.epss_score(cve)
+    epss_value, epss_pct = epss_pair if epss_pair else (None, None)
 
     return Finding(
         title=title,
@@ -118,6 +120,8 @@ def _vuln_to_finding(vuln: dict, target: str, scanned_path: str) -> Finding:
         kev=in_kev,
         cvss_score=cvss_score,
         cvss_vector=cvss_vector,
+        epss_score=epss_value,
+        epss_percentile=epss_pct,
     )
 
 
@@ -185,7 +189,7 @@ def _bandit_issue_to_finding(issue: dict, scanned_path: str) -> Finding:
     return Finding(
         title=f"[{test_id}] {test_name}",
         severity=severity,  # type: ignore[arg-type]
-        framework="OWASP ASVS 4.0.3",
+        framework="OWASP ASVS 5.0",
         control_id=control_id,
         evidence=evidence,
         recommendation=f"See Bandit docs: {more_info}",

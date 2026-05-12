@@ -40,15 +40,30 @@ def _render_finding(idx: int, f: Finding) -> str:
         if f.cvss_vector:
             cvss_line += f" — `{f.cvss_vector}`"
         cvss_line += "\n"
+    epss_line = ""
+    if f.epss_score is not None:
+        pct_label = f"top {(1 - f.epss_percentile) * 100:.1f}%" if f.epss_percentile is not None else ""
+        epss_line = f"- **EPSS:** {f.epss_score:.4f}"
+        if pct_label:
+            epss_line += f" ({pct_label} most likely to be exploited)"
+        epss_line += "\n"
     attack_line = ""
     if f.attack_techniques:
         attack_line = f"- **MITRE ATT&CK:** {', '.join(f.attack_techniques)}\n"
+    mappings_line = ""
+    if f.mapped_controls:
+        rendered = "; ".join(
+            f"{fw}: {', '.join(ids)}" for fw, ids in f.mapped_controls.items()
+        )
+        mappings_line = f"- **Cross-framework:** {rendered}\n"
     source_line = f"- **Source artifact:** `{f.source_artifact}`\n" if f.source_artifact else ""
     return (
         f"### {idx}. {badge} {f.title}\n"
         f"{framework_line}"
         f"{cvss_line}"
+        f"{epss_line}"
         f"{attack_line}"
+        f"{mappings_line}"
         f"{source_line}"
         f"- **Evidence:** {f.evidence}\n"
         f"- **Recommendation:** {f.recommendation}\n"

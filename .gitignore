@@ -69,5 +69,8 @@ trivy-cache/
 .DS_Store
 Thumbs.db
 
+# Fetched web sources (regenerate with `frameworks_index --fetch-web`)
+data/web/
+
 # Local notes
 notes.txt

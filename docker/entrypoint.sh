@@ -2,8 +2,8 @@
 set -e
 
 if [ ! -f .chromadb/chroma.sqlite3 ]; then
-    echo "First-time setup: embedding framework PDFs (~1 min, ~\$0.05 of OpenAI credits)..."
-    python -m auditor.ingest.frameworks_index --rebuild
+    echo "First-time setup: fetching OWASP markdown + embedding all sources (~2-3 min, ~\$0.15 of OpenAI credits)..."
+    python -m auditor.ingest.frameworks_index --fetch-web --rebuild
 fi
 
 exec streamlit run app.py \

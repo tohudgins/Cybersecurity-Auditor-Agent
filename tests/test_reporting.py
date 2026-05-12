@@ -54,3 +54,25 @@ def test_render_includes_attack_techniques():
     assert "T1078" in md
     assert "T1190" in md
     assert "MITRE ATT&CK" in md
+
+
+def test_render_includes_epss_line():
+    md = _render_finding(1, _f(epss_score=0.97432, epss_percentile=0.99988))
+    assert "EPSS" in md
+    assert "0.9743" in md
+    assert "top 0.0%" in md or "top 0.01%" in md or "top 0.0" in md  # percentile rendering
+
+
+def test_render_omits_epss_when_absent():
+    md = _render_finding(1, _f())
+    assert "EPSS" not in md
+
+
+def test_render_includes_mapped_controls():
+    md = _render_finding(
+        1,
+        _f(mapped_controls={"NIST CSF 2.0": ["PR.AA-05"], "CIS Controls v8.1": ["5.4", "6.8"]}),
+    )
+    assert "Cross-framework" in md
+    assert "PR.AA-05" in md
+    assert "5.4, 6.8" in md

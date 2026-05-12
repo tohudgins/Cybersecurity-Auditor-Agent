@@ -29,8 +29,8 @@ st.set_page_config(page_title="Cybersecurity Auditor", layout="wide")
 st.title("Cybersecurity Auditor")
 st.caption(
     "Ask compliance questions or upload artifacts (policy PDFs, configs, logs, system "
-    "descriptions) for an automated audit against NIST, CIS, OWASP ASVS, MITRE ATT&CK, "
-    "and CompTIA Security+."
+    "descriptions) for an automated audit against the NIST SP 800 series, NIST CSF 2.0, "
+    "CIS Controls v8.1, OWASP ASVS / Top 10, CISA Zero Trust, and MITRE ATT&CK."
 )
 
 

@@ -93,3 +93,25 @@ def test_multiple_attack_techniques_get_separate_props():
     finding = doc["assessment-results"]["results"][0]["findings"][0]
     techniques = [p["value"] for p in finding["props"] if p["name"] == "mitre-attack-technique"]
     assert sorted(techniques) == ["T1078", "T1110.001"]
+
+
+def test_epss_emits_oscal_props():
+    f = _make_finding(epss_score=0.97432, epss_percentile=0.99988)
+    doc = to_oscal_assessment_results([f])
+    props = {p["name"]: p["value"] for p in doc["assessment-results"]["results"][0]["findings"][0]["props"]}
+    assert props["epss-score"] == "0.97432"
+    assert props["epss-percentile"] == "0.99988"
+
+
+def test_mapped_controls_emit_props_with_class():
+    f = _make_finding(
+        mapped_controls={"NIST CSF 2.0": ["PR.AA-05"], "CIS Controls v8.1": ["5.4", "6.8"]},
+    )
+    doc = to_oscal_assessment_results([f])
+    props = doc["assessment-results"]["results"][0]["findings"][0]["props"]
+    mapped = [p for p in props if p["name"] == "mapped-control"]
+    assert len(mapped) == 3
+    by_class = {(p["class"], p["value"]) for p in mapped}
+    assert ("NIST CSF 2.0", "PR.AA-05") in by_class
+    assert ("CIS Controls v8.1", "5.4") in by_class
+    assert ("CIS Controls v8.1", "6.8") in by_class
