@@ -31,16 +31,12 @@ FRAMEWORK_NAMES: dict[str, str] = {
     "NIST.SP.800-53r5.pdf": "NIST SP 800-53 Rev. 5",
     "NIST.SP.800-171r3.pdf": "NIST SP 800-171 Rev. 3",
     "NIST.CSWP.30.pdf": "NIST Cybersecurity Framework 2.1",
-    "NIST.CSWP.29.pdf": "NIST Cybersecurity Framework 2.0",  # superseded by 2.1; kept for back-compat
     "NIST.SP.800-218.pdf": "NIST SP 800-218 (SSDF)",
-    # OWASP ASVS is now sourced from GitHub markdown (see web_fetcher.py).
-    # Legacy ASVS 4.0.3 PDF is still recognized if a user keeps it locally:
-    "OWASP Application Security Verification Standard 4.0.3-en.pdf": "OWASP ASVS 4.0.3",
+    # OWASP ASVS 5.0 is sourced from GitHub markdown (see web_fetcher.py).
     # Process / narrative documents (generic chunking)
     "nistspecialpublication800-30r1.pdf": "NIST SP 800-30 Rev. 1",
     "NIST.SP.800-37r2.pdf": "NIST SP 800-37 Rev. 2 (RMF)",
     "NIST.SP.800-61r3.pdf": "NIST SP 800-61 Rev. 3 (Incident Response)",
-    "NIST.SP.800-61r2.pdf": "NIST SP 800-61 Rev. 2 (Incident Response)",  # superseded by r3
     "zero_trust_maturity_model_v2_508.pdf": "CISA Zero Trust Maturity Model v2",
     "NIST.IR.7298r3.pdf": "NIST IR 7298 Rev. 3 (Glossary)",
     # Adversary reference
@@ -52,13 +48,11 @@ FRAMEWORK_NAMES: dict[str, str] = {
 _CONTROL_PATTERNS: dict[str, re.Pattern[str]] = {
     "NIST SP 800-53 Rev. 5": re.compile(r"^\s*([A-Z]{2}-\d{1,2}(?:\(\d{1,2}\))?)\s", re.MULTILINE),
     "NIST SP 800-171 Rev. 3": re.compile(r"^\s*(3\.\d{1,2}\.\d{1,2})\b", re.MULTILINE),
-    "NIST Cybersecurity Framework 2.0": re.compile(r"^\s*([A-Z]{2}\.[A-Z]{2}-\d{2})\b", re.MULTILINE),
+    "NIST Cybersecurity Framework 2.1": re.compile(r"^\s*([A-Z]{2}\.[A-Z]{2}-\d{2})\b", re.MULTILINE),
     "NIST SP 800-218 (SSDF)": re.compile(r"^\s*((?:PO|PS|PW|RV)\.\d+\.\d+)\b", re.MULTILINE),
     "CIS Controls v8.1": re.compile(r"^\s*(\d{1,2}\.\d{1,2})\s+[A-Z]", re.MULTILINE),
-    # ASVS 4.0.3 PDF (legacy) uses V-prefixed control IDs like V1.1.1.
     # ASVS 5.0 markdown uses table rows with bold IDs like **1.2.1** and
-    # gets generic chapter-level chunking instead.
-    "OWASP ASVS 4.0.3": re.compile(r"^\s*(V\d+\.\d+\.\d+)\b", re.MULTILINE),
+    # gets generic chapter-level chunking instead, so no per-control regex.
     # OWASP Top 10 markdowns lead each risk with a level-1 heading like
     # "# A01:2025 – Broken Access Control". Anchor on the heading to avoid
     # false matches when a body paragraph cross-references another risk.

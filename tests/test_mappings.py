@@ -29,8 +29,8 @@ def _f(**overrides) -> Finding:
 def test_lookup_returns_cross_framework_ids():
     mappings = lookup_control("AC-2")
     assert mappings is not None
-    assert "NIST CSF 2.0" in mappings
-    assert "PR.AA-01" in mappings["NIST CSF 2.0"]
+    assert "NIST CSF 2.1" in mappings
+    assert "PR.AA-01" in mappings["NIST CSF 2.1"]
     assert "CIS Controls v8.1" in mappings
     assert "SOC 2 TSC" in mappings
 
@@ -51,7 +51,7 @@ def test_control_title_returns_human_name():
 
 
 def test_enrich_skips_non_nist_findings():
-    f = _f(framework="OWASP ASVS 4.0.3", control_id="V2.1.1")
+    f = _f(framework="OWASP ASVS 5.0", control_id="V2.1.1")
     enrich_with_mappings([f])
     assert f.mapped_controls == {}
 

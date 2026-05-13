@@ -154,8 +154,8 @@ def _check_nginx(content: str) -> list[Finding]:
             Finding(
                 title="nginx version disclosure enabled",
                 severity="low",
-                framework="OWASP ASVS 4.0.3",
-                control_id="V14.3.2",
+                framework="OWASP Top 10 2025",
+                control_id="A02:2025",
                 evidence="`server_tokens on;` directive present.",
                 recommendation="Set `server_tokens off;` to suppress version banners.",
             )

@@ -105,13 +105,13 @@ def test_epss_emits_oscal_props():
 
 def test_mapped_controls_emit_props_with_class():
     f = _make_finding(
-        mapped_controls={"NIST CSF 2.0": ["PR.AA-05"], "CIS Controls v8.1": ["5.4", "6.8"]},
+        mapped_controls={"NIST CSF 2.1": ["PR.AA-05"], "CIS Controls v8.1": ["5.4", "6.8"]},
     )
     doc = to_oscal_assessment_results([f])
     props = doc["assessment-results"]["results"][0]["findings"][0]["props"]
     mapped = [p for p in props if p["name"] == "mapped-control"]
     assert len(mapped) == 3
     by_class = {(p["class"], p["value"]) for p in mapped}
-    assert ("NIST CSF 2.0", "PR.AA-05") in by_class
+    assert ("NIST CSF 2.1", "PR.AA-05") in by_class
     assert ("CIS Controls v8.1", "5.4") in by_class
     assert ("CIS Controls v8.1", "6.8") in by_class

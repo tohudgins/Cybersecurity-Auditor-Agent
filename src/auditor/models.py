@@ -56,7 +56,7 @@ class Finding(BaseModel):
         default_factory=dict,
         description=(
             "Cross-framework mappings populated by enrichment, e.g. "
-            "{'NIST CSF 2.0': ['PR.AA-05'], 'CIS Controls v8.1': ['5.4']}."
+            "{'NIST CSF 2.1': ['PR.AA-05'], 'CIS Controls v8.1': ['5.4']}."
         ),
     )
 
