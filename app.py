@@ -28,7 +28,7 @@ from auditor.tools.audit_policy_pdf import extract_pdf_text  # noqa: E402
 
 st.set_page_config(
     page_title="Cybersecurity Auditor",
-    page_icon="\U0001f6e1",
+    page_icon="◉",  # ◉ — bullseye / scan reticle
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -39,18 +39,25 @@ st.set_page_config(
 _CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-  --bg:        #0a0b10;
-  --surface:   #12141c;
-  --surface-2: #181b25;
-  --border:    #232735;
-  --border-soft: #1a1d28;
-  --text:      #f3f4f8;
-  --text-mute: #8b8fa3;
-  --text-dim:  #5c6075;
-  --accent:    #7c5cff;
-  --accent-soft: rgba(124, 92, 255, 0.12);
+  --bg:        #070a11;
+  --surface:   #0e131c;
+  --surface-2: #141a26;
+  --surface-3: #1b2230;
+  --border:    #1f2839;
+  --border-soft: #161c28;
+  --text:      #e9edf5;
+  --text-mute: #7d8699;
+  --text-dim:  #525c70;
+  --accent:    #22d3ee;        /* cyan-400 — primary */
+  --accent-2:  #0891b2;        /* cyan-700 — depth */
+  --accent-3:  #164e63;        /* cyan-900 — base */
+  --accent-warm: #ff5e7a;      /* coral — anomaly / alert */
+  --accent-good: #34d399;      /* emerald — ready / healthy */
+  --accent-soft: rgba(34, 211, 238, 0.10);
+  --accent-glow: rgba(34, 211, 238, 0.35);
 
   --crit-fg: #f87171;  --crit-bg: rgba(248, 113, 113, 0.10);
   --high-fg: #fb923c;  --high-bg: rgba(251, 146, 60, 0.10);
@@ -66,15 +73,61 @@ html, body, [class*="css"] {
   letter-spacing: -0.005em;
 }
 
-/* Hide Streamlit chrome */
-#MainMenu, footer, header [data-testid="stToolbar"] { visibility: hidden; }
-header[data-testid="stHeader"] { background: transparent; }
+.stApp {
+  background:
+    radial-gradient(900px 400px at 12% -10%, rgba(34, 211, 238, 0.06), transparent 60%),
+    radial-gradient(700px 350px at 95% 5%, rgba(8, 145, 178, 0.05), transparent 60%),
+    linear-gradient(180deg, #080b13 0%, var(--bg) 50%, #060810 100%);
+}
+
+/* Faint scan-grid behind the content — reads as "console" without being loud */
+.stApp::before {
+  content: "";
+  position: fixed; inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(34, 211, 238, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(34, 211, 238, 0.035) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 0%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 0%, transparent 75%);
+  z-index: 0;
+}
+.block-container, section[data-testid="stSidebar"] { position: relative; z-index: 1; }
+
+/* Streamlit chrome: keep the header (it holds the sidebar collapse control).
+   Only hide the main menu + footer. Leave the toolbar visible so the
+   sidebar expand button remains clickable. */
+#MainMenu, footer { visibility: hidden; }
+header[data-testid="stHeader"] {
+  background: transparent !important;
+}
+
+/* Make the collapse / expand controls subtle but always visible */
+[data-testid="stSidebarCollapsedControl"] button,
+[data-testid="stSidebarCollapseButton"] button {
+  background: var(--surface-2) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  color: var(--text) !important;
+  transition: all 0.15s ease;
+}
+[data-testid="stSidebarCollapsedControl"] button:hover,
+[data-testid="stSidebarCollapseButton"] button:hover {
+  border-color: var(--accent) !important;
+  background: var(--surface-3) !important;
+}
+[data-testid="stSidebarCollapsedControl"] svg,
+[data-testid="stSidebarCollapseButton"] svg {
+  color: var(--text) !important;
+  fill: var(--text) !important;
+}
 
 /* Block container */
 .block-container {
-  padding-top: 2.5rem;
+  padding-top: 3.25rem;
   padding-bottom: 4rem;
-  max-width: 1100px;
+  max-width: 1120px;
 }
 
 /* Page title */
@@ -82,125 +135,232 @@ header[data-testid="stHeader"] { background: transparent; }
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.4rem;
 }
 .page-title .mark {
-  width: 36px; height: 36px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #7c5cff 0%, #4f46e5 100%);
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  background:
+    radial-gradient(120% 120% at 0% 0%, rgba(255,255,255,0.20), transparent 55%),
+    linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 55%, var(--accent-3) 100%);
   display: flex; align-items: center; justify-content: center;
-  font-size: 1.05rem;
-  box-shadow: 0 6px 20px -8px rgba(124, 92, 255, 0.5);
+  box-shadow:
+    0 10px 28px -10px var(--accent-glow),
+    inset 0 1px 0 rgba(255,255,255,0.22),
+    inset 0 -10px 16px -10px rgba(0,0,0,0.45);
+  position: relative;
+}
+.page-title .mark::after {
+  content: ""; position: absolute; inset: 0;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  pointer-events: none;
+}
+.page-title .mark::before {
+  content: ""; position: absolute; inset: -1px;
+  border-radius: 13px;
+  background: linear-gradient(135deg, var(--accent), transparent 60%);
+  filter: blur(8px);
+  opacity: 0.35;
+  z-index: -1;
+}
+.page-title .mark svg {
+  width: 28px; height: 28px;
+  display: block;
 }
 .page-title h1 {
-  font-size: 1.6rem !important;
+  font-size: 1.75rem !important;
   font-weight: 600 !important;
   margin: 0 !important;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
   color: var(--text);
+  background: linear-gradient(180deg, #ffffff 0%, #b6d7e0 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 .page-subtitle {
   color: var(--text-mute);
   font-size: 0.94rem;
-  margin-bottom: 2.25rem;
+  margin-bottom: 0.9rem;
   font-weight: 400;
+  max-width: 720px;
+  line-height: 1.55;
 }
 
-/* Welcome panel */
-.welcome-card {
-  background: linear-gradient(180deg, var(--surface) 0%, var(--bg) 100%);
+/* HUD-style status line under the subtitle */
+.status-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  margin-bottom: 2rem;
+  padding: 5px 11px;
   border: 1px solid var(--border-soft);
-  border-radius: 14px;
+  border-radius: 999px;
+  background: rgba(15, 19, 28, 0.6);
+  backdrop-filter: blur(4px);
+}
+.status-line .dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--accent-good);
+  box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6);
+  animation: pulse-good 2.4s infinite;
+}
+.status-line .sep { color: var(--text-dim); opacity: 0.5; }
+.status-line .accent { color: var(--accent); }
+@keyframes pulse-good {
+  0%   { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55); }
+  70%  { box-shadow: 0 0 0 8px rgba(52, 211, 153, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+}
+
+/* Welcome panel — HUD console card */
+.welcome-card {
+  position: relative;
+  background:
+    radial-gradient(1200px 200px at 0% 0%, rgba(34, 211, 238, 0.06), transparent 60%),
+    linear-gradient(180deg, var(--surface) 0%, #0a0e16 100%);
+  border: 1px solid var(--border-soft);
+  border-radius: 16px;
   padding: 28px 32px;
   margin: 1rem 0 2rem 0;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.025) inset,
+    0 20px 40px -30px rgba(0,0,0,0.5),
+    0 0 0 1px rgba(34, 211, 238, 0.04);
+}
+/* HUD corner brackets — top-left and bottom-right */
+.welcome-card::before,
+.welcome-card::after {
+  content: "";
+  position: absolute;
+  width: 14px; height: 14px;
+  border: 1px solid var(--accent);
+  opacity: 0.55;
+  pointer-events: none;
+}
+.welcome-card::before {
+  top: 10px; left: 10px;
+  border-right: 0; border-bottom: 0;
+  border-top-left-radius: 6px;
+}
+.welcome-card::after {
+  bottom: 10px; right: 10px;
+  border-left: 0; border-top: 0;
+  border-bottom-right-radius: 6px;
 }
 .welcome-card h3 {
-  font-size: 1.05rem !important;
+  font-size: 0.78rem !important;
   font-weight: 600 !important;
-  color: var(--text) !important;
-  margin: 0 0 1.25rem 0 !important;
+  color: var(--text-mute) !important;
+  margin: 0 0 1.1rem 0 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
 }
 .welcome-card .mode {
-  padding: 14px 0;
+  padding: 16px 0;
   border-top: 1px solid var(--border-soft);
 }
 .welcome-card .mode:last-child { padding-bottom: 0; }
 .welcome-card .mode-title {
   font-weight: 600;
   color: var(--text);
-  font-size: 0.92rem;
-  display: flex; align-items: center; gap: 8px;
-  margin-bottom: 4px;
+  font-size: 0.95rem;
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 6px;
+  letter-spacing: -0.01em;
 }
 .welcome-card .mode-title .bullet {
-  width: 6px; height: 6px; border-radius: 50%;
+  width: 8px; height: 8px; border-radius: 50%;
   background: var(--accent);
+  box-shadow:
+    0 0 0 3px rgba(34, 211, 238, 0.10),
+    0 0 14px var(--accent-glow);
 }
 .welcome-card .mode-body {
   color: var(--text-mute);
   font-size: 0.88rem;
-  line-height: 1.6;
-}
-
-/* Stat tiles row */
-.stats-row {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-bottom: 0.5rem;
-}
-.stat-tile {
-  background: var(--surface);
-  border: 1px solid var(--border-soft);
-  border-radius: 10px;
-  padding: 14px 18px;
-}
-.stat-tile .label {
-  font-size: 0.72rem;
-  color: var(--text-mute);
-  font-weight: 500;
-  margin-bottom: 4px;
-}
-.stat-tile .value {
-  font-size: 1.05rem;
-  color: var(--text);
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  line-height: 1.65;
+  padding-left: 16px;
 }
 
 /* Sidebar */
 section[data-testid="stSidebar"] {
-  background: var(--surface) !important;
+  background: #0d0f17 !important;
   border-right: 1px solid var(--border-soft);
 }
-section[data-testid="stSidebar"] > div:first-child { padding-top: 2rem; }
+section[data-testid="stSidebar"] > div:first-child { padding-top: 1.5rem; }
+.sidebar-section {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-soft);
+}
+.sidebar-section:first-of-type {
+  margin-top: 0.25rem;
+  padding-top: 0;
+  border-top: none;
+}
 .sidebar-label {
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   font-weight: 600;
   color: var(--text);
-  margin: 1.25rem 0 0.5rem 0;
+  margin: 0 0 0.4rem 0;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
 }
 .sidebar-help {
   font-size: 0.78rem;
   color: var(--text-dim);
   margin-bottom: 0.75rem;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 /* Chat messages */
 [data-testid="stChatMessage"] {
   background: var(--surface);
   border: 1px solid var(--border-soft);
-  border-radius: 12px;
-  padding: 16px 20px;
-  margin-bottom: 12px;
+  border-radius: 14px;
+  padding: 18px 22px;
+  margin-bottom: 14px;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.02) inset;
+  position: relative;
 }
-[data-testid="stChatMessage"] p { line-height: 1.65; }
+/* Slim accent stripe on assistant messages — uses :has() (modern browsers only) */
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) {
+  border-left: 2px solid var(--accent);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.02) inset,
+    -2px 0 16px -8px var(--accent-glow);
+}
+[data-testid="stChatMessage"] p { line-height: 1.7; }
+[data-testid="stChatMessage"] h1,
 [data-testid="stChatMessage"] h2,
-[data-testid="stChatMessage"] h3 {
+[data-testid="stChatMessage"] h3,
+[data-testid="stChatMessage"] h4 {
   font-weight: 600 !important;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
   color: var(--text);
+  margin-top: 1.25rem !important;
+  margin-bottom: 0.6rem !important;
+}
+[data-testid="stChatMessage"] h2 { font-size: 1.15rem !important; }
+[data-testid="stChatMessage"] h3 { font-size: 1rem !important; }
+[data-testid="stChatMessage"] ul, [data-testid="stChatMessage"] ol {
+  padding-left: 1.4rem;
+}
+[data-testid="stChatMessage"] li { margin: 0.25rem 0; }
+
+/* Avatar — subtle accent ring */
+[data-testid="stChatMessage"] [data-testid="stChatMessageAvatarUser"],
+[data-testid="stChatMessage"] [data-testid="stChatMessageAvatarAssistant"] {
+  border: 1px solid var(--border);
+  background: var(--surface-2) !important;
 }
 
 /* Severity pills */
@@ -226,13 +386,20 @@ section[data-testid="stSidebar"] > div:first-child { padding-top: 2rem; }
   border-color: transparent;
 }
 
-/* Inputs — softer, rounded */
+/* Inputs — softer, rounded, with breathing room inside */
 .stChatInput textarea, .stTextArea textarea, .stTextInput input {
   background: var(--surface-2) !important;
   border: 1px solid var(--border) !important;
   color: var(--text) !important;
   border-radius: 10px !important;
   font-family: inherit !important;
+  padding: 0.7rem 0.95rem !important;
+  line-height: 1.55 !important;
+}
+.stChatInput textarea::placeholder,
+.stTextArea textarea::placeholder,
+.stTextInput input::placeholder {
+  color: var(--text-dim) !important;
 }
 .stChatInput textarea:focus, .stTextArea textarea:focus, .stTextInput input:focus {
   border-color: var(--accent) !important;
@@ -248,6 +415,10 @@ section[data-testid="stSidebar"] > div:first-child { padding-top: 2rem; }
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
+  padding: 4px 6px;
+}
+[data-testid="stChatInput"] textarea {
+  padding: 0.7rem 0.95rem !important;
 }
 
 /* Multiselect */
@@ -264,8 +435,8 @@ section[data-testid="stSidebar"] > div:first-child { padding-top: 2rem; }
 
 /* Buttons */
 .stButton button, .stDownloadButton button {
-  background: var(--accent);
-  border: none;
+  background: linear-gradient(180deg, #8a6cff 0%, var(--accent) 100%);
+  border: 1px solid rgba(255,255,255,0.08);
   color: white;
   font-family: inherit;
   font-weight: 500;
@@ -273,12 +444,15 @@ section[data-testid="stSidebar"] > div:first-child { padding-top: 2rem; }
   border-radius: 10px;
   padding: 0.55rem 1rem;
   transition: all 0.15s ease;
-  box-shadow: 0 4px 14px -6px rgba(124, 92, 255, 0.4);
+  box-shadow: 0 4px 14px -6px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.15);
 }
 .stButton button:hover, .stDownloadButton button:hover {
-  background: #8a6cff;
+  background: linear-gradient(180deg, #9a7eff 0%, #8a6cff 100%);
   transform: translateY(-1px);
-  box-shadow: 0 6px 18px -6px rgba(124, 92, 255, 0.55);
+  box-shadow: 0 8px 22px -6px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.2);
+}
+.stButton button:active, .stDownloadButton button:active {
+  transform: translateY(0);
 }
 section[data-testid="stSidebar"] .stButton button {
   background: var(--surface-2);
@@ -287,10 +461,11 @@ section[data-testid="stSidebar"] .stButton button {
   box-shadow: none;
 }
 section[data-testid="stSidebar"] .stButton button:hover {
-  background: var(--surface);
+  background: var(--surface-3);
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--text);
   transform: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 /* File uploader */
@@ -360,14 +535,37 @@ st.markdown(_CSS, unsafe_allow_html=True)
 
 # ---- Title ----------------------------------------------------------------
 
+_LOGO_SVG = """
+<svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <circle cx="20" cy="20" r="13" stroke="white" stroke-width="1.5" opacity="0.95"/>
+  <circle cx="20" cy="20" r="6.5" stroke="white" stroke-width="1.4" opacity="0.55"/>
+  <circle cx="20" cy="20" r="1.6" fill="white"/>
+  <line x1="20" y1="3"  x2="20" y2="8.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="20" y1="31.5" x2="20" y2="37" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="3"  y1="20" x2="8.5" y2="20" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="31.5" y1="20" x2="37" y2="20" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+  <circle cx="27" cy="13" r="2.2" fill="#ff5e7a" stroke="white" stroke-width="0.8">
+    <animate attributeName="opacity" values="1;0.35;1" dur="1.8s" repeatCount="indefinite"/>
+    <animate attributeName="r" values="2.2;2.6;2.2" dur="1.8s" repeatCount="indefinite"/>
+  </circle>
+</svg>
+"""
+
 st.markdown(
-    """
+    f"""
 <div class="page-title">
-  <div class="mark">\U0001f6e1</div>
+  <div class="mark">{_LOGO_SVG}</div>
   <h1>Cybersecurity Auditor</h1>
 </div>
 <div class="page-subtitle">
   Compliance Q&A and automated audits across NIST, CIS, OWASP, CISA, and MITRE ATT&CK.
+</div>
+<div class="status-line">
+  <span class="dot"></span>
+  <span>System</span><span class="sep">/</span>
+  <span class="accent">Online</span><span class="sep">/</span>
+  <span>OSCAL 1.1.2</span><span class="sep">/</span>
+  <span>BM25 + Vector</span>
 </div>
     """,
     unsafe_allow_html=True,
@@ -377,9 +575,11 @@ st.markdown(
 # ---- Sidebar --------------------------------------------------------------
 
 with st.sidebar:
-    st.markdown('<div class="sidebar-label">Frameworks</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="sidebar-help">Restrict the corpus. Leave empty to use everything.</div>',
+        '<div class="sidebar-section">'
+        '<div class="sidebar-label">Frameworks</div>'
+        '<div class="sidebar-help">Restrict the corpus. Leave empty to use everything.</div>'
+        '</div>',
         unsafe_allow_html=True,
     )
     target_frameworks = st.multiselect(
@@ -390,9 +590,11 @@ with st.sidebar:
         placeholder="All frameworks",
     )
 
-    st.markdown('<div class="sidebar-label">Attach artifacts</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="sidebar-help">Files, a pasted description, or a codebase path. Cleared after each run.</div>',
+        '<div class="sidebar-section">'
+        '<div class="sidebar-label">Attach artifacts</div>'
+        '<div class="sidebar-help">Files, a pasted description, or a codebase path. Cleared after each run.</div>'
+        '</div>',
         unsafe_allow_html=True,
     )
 
@@ -416,7 +618,12 @@ with st.sidebar:
         label_visibility="collapsed",
     )
 
-    st.markdown('<div class="sidebar-label">Session</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="sidebar-section">'
+        '<div class="sidebar-label">Session</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
     if st.button("Clear chat history", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
@@ -484,24 +691,8 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 if not st.session_state.messages:
-    n_frameworks = len(set(FRAMEWORK_NAMES.values())) + 4  # +4 web sources
     st.markdown(
-        f"""
-<div class="stats-row">
-  <div class="stat-tile">
-    <div class="label">Frameworks indexed</div>
-    <div class="value">{n_frameworks} sources</div>
-  </div>
-  <div class="stat-tile">
-    <div class="label">Scanners wired</div>
-    <div class="value">Trivy &middot; Bandit &middot; Checkov</div>
-  </div>
-  <div class="stat-tile">
-    <div class="label">Enrichment</div>
-    <div class="value">KEV &middot; EPSS &middot; ATT&amp;CK</div>
-  </div>
-</div>
-
+        """
 <div class="welcome-card">
   <h3>Get started</h3>
   <div class="mode">
