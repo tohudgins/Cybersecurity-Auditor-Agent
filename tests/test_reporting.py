@@ -71,7 +71,7 @@ def test_render_omits_epss_when_absent():
 def test_render_includes_mapped_controls():
     md = _render_finding(
         1,
-        _f(mapped_controls={"NIST CSF 2.0": ["PR.AA-05"], "CIS Controls v8.1": ["5.4", "6.8"]}),
+        _f(mapped_controls={"NIST CSF 2.1": ["PR.AA-05"], "CIS Controls v8.1": ["5.4", "6.8"]}),
     )
     assert "Cross-framework" in md
     assert "PR.AA-05" in md

@@ -10,7 +10,7 @@ Usage:
     from auditor.enrichment.mappings import lookup_control
     lookup_control("AC-2")
     # → {"title": "Account Management",
-    #    "NIST CSF 2.0": ["PR.AA-01", ...],
+    #    "NIST CSF 2.1": ["PR.AA-01", ...],
     #    "CIS Controls v8.1": [...], "ISO 27001:2022": [...], ...}
 """
 from __future__ import annotations

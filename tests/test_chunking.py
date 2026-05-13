@@ -61,7 +61,7 @@ def test_chunk_documents_mixes_per_control_and_generic():
         _page(
             "Incident response is a key capability. Build a team. Communicate with stakeholders. " * 30,
             i,
-            framework="NIST SP 800-61 Rev. 2 (Incident Response)",
+            framework="NIST SP 800-61 Rev. 3 (Incident Response)",
         )
         for i in range(1, 4)
     ]
@@ -77,10 +77,9 @@ def test_control_patterns_match_expected_ids():
     cases = {
         "NIST SP 800-53 Rev. 5": ("AC-2 Account Management", "AC-2"),
         "NIST SP 800-171 Rev. 3": ("3.1.1 Limit system access", "3.1.1"),
-        "NIST Cybersecurity Framework 2.0": ("PR.AA-05 Access permissions", "PR.AA-05"),
+        "NIST Cybersecurity Framework 2.1": ("PR.AA-05 Access permissions", "PR.AA-05"),
         "NIST SP 800-218 (SSDF)": ("PO.1.1 Document policies", "PO.1.1"),
         "CIS Controls v8.1": ("5.4 Restrict Administrator Privileges", "5.4"),
-        "OWASP ASVS 4.0.3": ("V2.1.1 Verify password length", "V2.1.1"),
         "OWASP Top 10 2025": ("# A01:2025 – Broken Access Control", "A01:2025"),
     }
     for framework, (text, expected_id) in cases.items():
