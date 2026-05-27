@@ -79,18 +79,21 @@ pytest tests/test_audit_config.py::test_sshd_heuristics_flag_root_login_and_pass
 - `_tokenize` strips trailing `.:`-style punctuation so `AC-2.` tokenizes as `ac-2` and BM25 hits exact control IDs.
 
 ### `tools/`
-- `compliance_qa.py` — vector retrieval + LLM synthesis with citations
+- `compliance_qa.py` — vector retrieval + LLM synthesis with citations. Exposes both `answer_compliance_question()` (blocking) and `stream_compliance_answer()` (yields token chunks for `st.write_stream`).
 - `framework_summary.py` — pure LCEL pipeline (no `MultiQueryRetriever` or `load_summarize_chain` — those legacy umbrella imports were removed)
 - `audit_text.py` / `audit_policy_pdf.py` / `audit_logs.py` — LLM with retrieval context
 - `audit_config.py` — `detect_config_kind()` + per-kind regex heuristics merged with Checkov (Terraform / K8s) or LLM analysis
-- `audit_codebase.py` — Trivy (CVEs in deps, with CVSS + KEV + EPSS) + Bandit (Python SAST). Bandit findings cite `OWASP ASVS 5.0`. Trivy findings cite `NIST SP 800-53 Rev. 5 / SI-2`.
+- `audit_codebase.py` — Trivy (CVEs in deps, with CVSS + KEV + EPSS) + Bandit (Python SAST) + gitleaks secrets scanning with a regex fallback when gitleaks isn't on PATH. Bandit findings cite `OWASP ASVS 5.0`. Trivy findings cite `NIST SP 800-53 Rev. 5 / SI-2`. Secret findings cite `NIST SP 800-53 Rev. 5 / IA-5` (passwords/keys) or `SC-28` (private keys at rest).
 - `_findings_llm.py` — shared helper wiring `ChatOpenAI.with_structured_output(_FindingList)` so every audit tool returns `list[Finding]`.
 
 ### `enrichment/`
 - `kev.py` — CISA KEV catalog, 24h cache at `~/.cache/auditor/kev.json`. `is_kev(cve)` returns bool.
 - `epss.py` — FIRST.org EPSS daily CSV, 24h cache. `epss_score(cve)` returns `(score, percentile) | None`.
-- `mitre.py` — `_TECHNIQUE_KEYWORDS` dict mapping ATT&CK technique IDs to substrings. `enrich_findings(findings)` annotates each finding's `attack_techniques` field in place.
+- `mitre.py` — two-layer ATT&CK tagging. Layer 1 is `_TECHNIQUE_KEYWORDS`, hand-curated substring rules. Layer 2 downloads the full ATT&CK Enterprise STIX bundle from `mitre/cti` on GitHub (7-day cache at `~/.cache/auditor/attack_techniques.json`) and matches multi-word technique names verbatim against finding text. `enrich_findings(findings)` annotates each finding's `attack_techniques` in place. Tests stub `_stix_phrases = {}` via conftest so the network is never touched.
 - `mappings.py` — loads `data/mappings/control_mappings.json` (NIST 800-53 anchor → CSF 2.1 / CIS / ISO / PCI / SOC 2). `enrich_with_mappings(findings)` populates `Finding.mapped_controls` for any finding tagged `framework="NIST SP 800-53 Rev. 5"`. `_base_id()` strips enhancement suffixes so `AC-2(1)` resolves to `AC-2`.
+
+### `history.py`
+- SQLite-backed audit run history at `~/.cache/auditor/history.db`. Exposes `save_run()`, `list_runs(limit, offset)`, `count_runs()`, `get_run(id)`, `delete_run(id)`, `clear_all()`. Every audit run is persisted automatically after `reporting_node` produces a report; the Streamlit sidebar surfaces the 3 most recent + a "View all" page with pagination + bulk delete.
 
 ### `oscal/`
 - `exporter.py` — `to_oscal_assessment_results(findings)` returns OSCAL 1.1.2 JSON. Deterministic UUIDv5 for stable observation/finding IDs across runs. All enrichment fields surface as OSCAL `props`: `severity`, `cvss-v3-base-score`, `cvss-v3-vector`, `epss-score`, `epss-percentile`, `cisa-kev`, `mitre-attack-technique`, `mapped-control` (with `class=<framework>`).
@@ -99,6 +102,14 @@ pytest tests/test_audit_config.py::test_sshd_heuristics_flag_root_login_and_pass
 - `graph.py` — `AUDITOR_GRAPH` singleton, START → supervisor → conditional `{compliance | audit}` → reporting → END.
 - `audit_agent.py` — dispatches each `Artifact` to its tool, then calls `enrich_findings()` (ATT&CK) and `enrich_with_mappings()` (cross-framework).
 - `reporting_agent.py` — renders findings as Markdown. Per-finding lines: KEV badge, severity badge, mapped control, CVSS line, EPSS line, MITRE ATT&CK line, cross-framework line, source artifact, evidence, recommendation. Executive summary uses `gpt-5-mini` (fast_model).
+
+## Streamlit UI flow
+
+`app.py` branches before invoking the graph based on whether artifacts are attached:
+- **Compliance path** (no artifacts): bypasses the graph and calls `stream_compliance_answer()` directly through `st.write_stream()` for token-by-token output.
+- **Audit path** (artifacts present): uses `AUDITOR_GRAPH.stream(stream_mode="updates")` inside an `st.status()` container that labels each node (`supervisor` / `audit_node` / `reporting_node`) as it completes. The final report is rendered, OSCAL is offered as a download, and the run is persisted via `history.save_run()`.
+
+Sidebar shows the 3 most recent runs as buttons; a "View all (N) →" button opens a full pageable history view in the main area (replaces the chat via `st.stop()`), with per-row View / Delete and a confirmed Clear-All.
 
 ## Conventions
 
@@ -113,7 +124,8 @@ pytest tests/test_audit_config.py::test_sshd_heuristics_flag_root_login_and_pass
 
 ## Tests
 
-- `tests/conftest.py` autouse fixture monkeypatches `run_findings_chain`, `retrieve`, `kev.is_kev`, and `epss.epss_score`. Suite runs offline with no real API key.
+- `tests/conftest.py` autouse fixture monkeypatches `run_findings_chain`, `retrieve` (across all tool modules including `compliance_qa`), `kev.is_kev`, `epss.epss_score`, and `mitre._stix_phrases = {}`. Suite runs offline with no real API key and no STIX download.
+- Tests for `history.py` use a `tmp_db` fixture that monkeypatches `history._DB_PATH` to a temp file so the suite never touches `~/.cache/auditor/`.
 - Tests that need the real (unstubbed) function — e.g., to test `retrieve` or `epss_score` directly — capture the function at module import time (`_real_retrieve = retriever_mod.retrieve`) before the conftest stub is applied per-test.
 - When adding a new audit tool that imports `run_findings_chain` or `retrieve` directly, extend the `for module in (...)` loop in conftest.
 - CI runs `pytest` + `ruff check` on Python 3.10/3.11/3.12. Gitleaks is a separate job. Use `examples/` for any intentionally-weak fixture content (the gitleaks allowlist exempts that directory).

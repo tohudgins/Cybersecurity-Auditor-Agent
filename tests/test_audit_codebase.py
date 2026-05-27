@@ -226,3 +226,95 @@ def test_audit_codebase_handles_missing_bandit(monkeypatch, tmp_path):
     findings = ac.audit_codebase(tmp_path)
     bandit_msg = [f for f in findings if "Bandit not installed" in f.title]
     assert len(bandit_msg) == 1
+
+
+# ---- Secrets scanning -------------------------------------------------------
+
+_FAKE_GITLEAKS_OUTPUT = [
+    {
+        "Description": "Generic API Key",
+        "File": "config/settings.py",
+        "StartLine": 12,
+        "RuleID": "generic-api-key",
+        "Secret": "REDACTED",
+    }
+]
+
+
+def test_secrets_scan_gitleaks_found(monkeypatch, tmp_path):
+    """When gitleaks is installed and finds a leak, it surfaces as a finding."""
+
+    def _route(cmd, *_a, **_kw):
+        if cmd and cmd[0] == "gitleaks":
+            return _fake_run(stdout=json.dumps(_FAKE_GITLEAKS_OUTPUT))
+        return _fake_run(stdout=json.dumps({"SchemaVersion": 2, "Results": []}))
+
+    monkeypatch.setattr(subprocess, "run", _route)
+    findings = ac.audit_codebase(tmp_path)
+    secret_findings = [f for f in findings if "Secret detected" in f.title]
+    assert len(secret_findings) == 1
+    f = secret_findings[0]
+    assert f.severity == "high"
+    assert f.control_id == "IA-5"
+    assert "generic-api-key" in f.evidence
+
+
+def test_secrets_scan_gitleaks_no_leaks(monkeypatch, tmp_path):
+    """When gitleaks finds nothing it returns an empty list; no extra findings."""
+
+    def _route(cmd, *_a, **_kw):
+        if cmd and cmd[0] == "gitleaks":
+            return _fake_run(stdout="[]")
+        return _fake_run(stdout=json.dumps({"SchemaVersion": 2, "Results": []}))
+
+    monkeypatch.setattr(subprocess, "run", _route)
+    findings = ac.audit_codebase(tmp_path)
+    assert not any("Secret" in f.title for f in findings)
+
+
+def test_secrets_scan_regex_fallback_finds_password(monkeypatch, tmp_path):
+    """Without gitleaks, the regex fallback catches a hardcoded password."""
+    (tmp_path / "config.py").write_text('DB_PASSWORD = "SuperSecret123!"\n')
+
+    def _route(cmd, *_a, **_kw):
+        if cmd and cmd[0] == "gitleaks":
+            raise FileNotFoundError("gitleaks not found")
+        return _fake_run(stdout=json.dumps({"SchemaVersion": 2, "Results": []}))
+
+    monkeypatch.setattr(subprocess, "run", _route)
+    findings = ac.audit_codebase(tmp_path)
+    secret_findings = [f for f in findings if "password" in f.title.lower() or "Secret" in f.title]
+    assert len(secret_findings) >= 1
+    assert all(f.control_id == "IA-5" for f in secret_findings if f.severity == "high")
+
+
+def test_secrets_scan_regex_fallback_finds_private_key(monkeypatch, tmp_path):
+    """Regex fallback detects an embedded RSA private key."""
+    (tmp_path / "deploy.sh").write_text("-----BEGIN RSA PRIVATE KEY-----\nMIIE...\n-----END RSA PRIVATE KEY-----\n")
+
+    def _route(cmd, *_a, **_kw):
+        if cmd and cmd[0] == "gitleaks":
+            raise FileNotFoundError
+        return _fake_run(stdout=json.dumps({"SchemaVersion": 2, "Results": []}))
+
+    monkeypatch.setattr(subprocess, "run", _route)
+    findings = ac.audit_codebase(tmp_path)
+    key_findings = [f for f in findings if "private key" in f.title.lower()]
+    assert len(key_findings) >= 1
+    assert key_findings[0].control_id == "SC-28"
+
+
+def test_secrets_scan_regex_no_secrets_in_clean_file(monkeypatch, tmp_path):
+    """A clean Python file produces no secret findings via regex."""
+    (tmp_path / "clean.py").write_text("x = 1 + 1\nprint(x)\n")
+
+    def _route(cmd, *_a, **_kw):
+        if cmd and cmd[0] == "gitleaks":
+            raise FileNotFoundError
+        return _fake_run(stdout=json.dumps({"SchemaVersion": 2, "Results": []}))
+
+    monkeypatch.setattr(subprocess, "run", _route)
+    findings = ac.audit_codebase(tmp_path)
+    # The info "gitleaks not installed" finding may appear but no secret findings
+    secret_high = [f for f in findings if f.severity == "high" and f.control_id in ("IA-5", "SC-28")]
+    assert secret_high == []

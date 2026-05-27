@@ -7,8 +7,10 @@ services:
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
     volumes:
-      - chromadb:/app/.chromadb  # persist embeddings across restarts
+      - chromadb:/app/.chromadb          # framework embeddings
+      - auditor_cache:/root/.cache/auditor  # KEV / EPSS / ATT&CK STIX / audit history
     restart: unless-stopped
 
 volumes:
   chromadb:
+  auditor_cache:

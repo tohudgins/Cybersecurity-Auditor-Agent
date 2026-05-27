@@ -118,3 +118,41 @@ def test_enrich_findings_populates_attack_techniques():
     enrich_findings(findings)
     assert findings[0].attack_techniques == ["T1110"]
     assert findings[1].attack_techniques == []
+
+
+# ---- STIX layer-2 tagging (the curated layer is verified by tests above) ---
+
+
+def test_stix_layer_adds_matching_technique(monkeypatch):
+    """When STIX phrases are loaded, an exact-name substring adds a technique."""
+    import auditor.enrichment.mitre as mitre_mod
+
+    monkeypatch.setattr(mitre_mod, "_stix_phrases", {
+        "spearphishing attachment": "T1566.001",
+        "network sniffing": "T1040",
+    })
+    f = _f("User opened a spearphishing attachment in email")
+    techniques = tag_finding(f)
+    assert "T1566.001" in techniques
+
+
+def test_stix_layer_does_not_duplicate_curated_match(monkeypatch):
+    """If both layer-1 and layer-2 produce the same TID, it appears only once."""
+    import auditor.enrichment.mitre as mitre_mod
+
+    # "Brute Force" is in STIX; "brute-force" (hyphenated) hits layer 1.
+    monkeypatch.setattr(mitre_mod, "_stix_phrases", {"brute force": "T1110"})
+    f = _f("Brute-force pattern: 9 failed logins; brute force attack ongoing")
+    techniques = tag_finding(f)
+    assert techniques.count("T1110") == 1
+
+
+def test_stix_layer_returns_empty_when_no_phrase_matches(monkeypatch):
+    """STIX phrases with no overlap don't pollute the result."""
+    import auditor.enrichment.mitre as mitre_mod
+
+    monkeypatch.setattr(mitre_mod, "_stix_phrases", {
+        "spearphishing attachment": "T1566.001",
+    })
+    f = _f("Generic info-level note", evidence="nothing actionable")
+    assert tag_finding(f) == []

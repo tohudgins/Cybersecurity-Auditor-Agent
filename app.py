@@ -13,16 +13,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 import json  # noqa: E402
 import re  # noqa: E402
+from collections import Counter  # noqa: E402
 from datetime import datetime, timezone  # noqa: E402
 
 import streamlit as st  # noqa: E402
 from langchain_core.messages import AIMessage, HumanMessage  # noqa: E402
 
+from auditor import history as audit_history  # noqa: E402
 from auditor.agents.graph import AUDITOR_GRAPH  # noqa: E402
 from auditor.ingest.pdf_loader import FRAMEWORK_NAMES  # noqa: E402
 from auditor.models import Artifact  # noqa: E402
 from auditor.oscal.exporter import to_oscal_assessment_results  # noqa: E402
 from auditor.tools.audit_policy_pdf import extract_pdf_text  # noqa: E402
+from auditor.tools.compliance_qa import stream_compliance_answer  # noqa: E402
 
 # ---- Page setup ------------------------------------------------------------
 
@@ -537,17 +540,37 @@ st.markdown(_CSS, unsafe_allow_html=True)
 
 _LOGO_SVG = """
 <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-  <circle cx="20" cy="20" r="13" stroke="white" stroke-width="1.5" opacity="0.95"/>
-  <circle cx="20" cy="20" r="6.5" stroke="white" stroke-width="1.4" opacity="0.55"/>
-  <circle cx="20" cy="20" r="1.6" fill="white"/>
-  <line x1="20" y1="3"  x2="20" y2="8.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-  <line x1="20" y1="31.5" x2="20" y2="37" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-  <line x1="3"  y1="20" x2="8.5" y2="20" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-  <line x1="31.5" y1="20" x2="37" y2="20" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-  <circle cx="27" cy="13" r="2.2" fill="#ff5e7a" stroke="white" stroke-width="0.8">
-    <animate attributeName="opacity" values="1;0.35;1" dur="1.8s" repeatCount="indefinite"/>
-    <animate attributeName="r" values="2.2;2.6;2.2" dur="1.8s" repeatCount="indefinite"/>
-  </circle>
+  <!-- Cyan glitch ghost (briefly shifts left every ~3s) -->
+  <g opacity="0.55">
+    <path d="M11 14 L19 20 L11 26" stroke="#22d3ee" stroke-width="2.2"
+          stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <rect x="22" y="24" width="6" height="2" fill="#22d3ee"/>
+    <animateTransform attributeName="transform" type="translate"
+                      values="0 0; -2 0; -1 0.5; 0.5 -0.5; 0 0"
+                      keyTimes="0; 0.1; 0.15; 0.2; 1"
+                      dur="2.8s" repeatCount="indefinite"/>
+  </g>
+
+  <!-- Coral glitch ghost (briefly shifts right) -->
+  <g opacity="0.55">
+    <path d="M11 14 L19 20 L11 26" stroke="#ff5e7a" stroke-width="2.2"
+          stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <rect x="22" y="24" width="6" height="2" fill="#ff5e7a"/>
+    <animateTransform attributeName="transform" type="translate"
+                      values="0 0; 2 0; 1 -0.5; -0.5 0.5; 0 0"
+                      keyTimes="0; 0.1; 0.15; 0.2; 1"
+                      dur="2.8s" repeatCount="indefinite"/>
+  </g>
+
+  <!-- Main prompt chevron `>` -->
+  <path d="M11 14 L19 20 L11 26" stroke="white" stroke-width="2.4"
+        stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+
+  <!-- Blinking cursor `_` -->
+  <rect x="22" y="24" width="6" height="2" fill="white">
+    <animate attributeName="opacity" values="1;0" dur="1s"
+             repeatCount="indefinite" calcMode="discrete"/>
+  </rect>
 </svg>
 """
 
@@ -605,18 +628,19 @@ with st.sidebar:
         help="Dockerfiles: rename to Dockerfile.txt so the uploader accepts them.",
         label_visibility="collapsed",
     )
-    pasted_description = st.text_area(
-        "Description",
-        height=100,
-        placeholder="Paste a system description...",
-        label_visibility="collapsed",
-    )
-    codebase_path = st.text_input(
-        "Codebase path",
-        placeholder="Codebase path to scan with Trivy",
-        help="Requires Trivy installed locally (see README).",
-        label_visibility="collapsed",
-    )
+    with st.expander("Other input methods"):
+        pasted_description = st.text_area(
+            "Description",
+            height=100,
+            placeholder="Paste a system description...",
+            label_visibility="collapsed",
+        )
+        codebase_path = st.text_input(
+            "Codebase path",
+            placeholder="Codebase path to scan with Trivy",
+            help="Requires Trivy installed locally (see README).",
+            label_visibility="collapsed",
+        )
 
     st.markdown(
         '<div class="sidebar-section">'
@@ -626,7 +650,40 @@ with st.sidebar:
     )
     if st.button("Clear chat history", use_container_width=True):
         st.session_state.messages = []
+        st.session_state.pop("_viewed_run_id", None)
         st.rerun()
+
+    # ── Audit history ────────────────────────────────────────────────────
+    recent_runs = audit_history.list_runs(limit=3)
+    total_run_count = audit_history.count_runs()
+    if recent_runs:
+        st.markdown(
+            '<div class="sidebar-section">'
+            '<div class="sidebar-label">Recent Audits</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        for run in recent_runs:
+            severities = json.loads(run["severities"])
+            badges = " · ".join(
+                f"{severities[k]} {k}"
+                for k in ("critical", "high", "medium")
+                if severities.get(k)
+            )
+            ts = run["timestamp"][:16].replace("T", " ")
+            label = f"{ts}" + (f" · {badges}" if badges else "")
+            if st.button(label, key=f"hist_{run['id']}", use_container_width=True):
+                st.session_state["_viewed_run_id"] = run["id"]
+                st.rerun()
+
+        if total_run_count > len(recent_runs):
+            if st.button(
+                f"View all ({total_run_count}) →",
+                key="view_all_history",
+                use_container_width=True,
+            ):
+                st.session_state["_viewed_run_id"] = "_all"
+                st.rerun()
 
 
 # ---- Helpers ---------------------------------------------------------------
@@ -685,10 +742,147 @@ def _render_markdown_with_pills(md: str) -> str:
     return out
 
 
-# ---- Welcome panel (only when chat is empty) ------------------------------
+# ── Node labels shown inside st.status during audit runs ────────────────────
+_AUDIT_NODE_LABELS: dict[str, str] = {
+    "supervisor":       "🔍 Routing request…",
+    "audit_node":       "🔬 Running scanners and LLM analysis…",
+    "compliance_node":  "📚 Searching frameworks…",
+    "reporting_node":   "📝 Writing report…",
+}
+
+
+# ---- Session state init ----------------------------------------------------
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+
+# ---- History view (replaces chat when a run is selected) -------------------
+
+_viewed = st.session_state.get("_viewed_run_id")
+
+# Full history list (sentinel = "_all")
+if _viewed == "_all":
+    _HISTORY_PAGE_SIZE = 25
+    total_runs = audit_history.count_runs()
+    page = max(0, st.session_state.get("_history_page", 0))
+    max_page = max(0, (total_runs - 1) // _HISTORY_PAGE_SIZE) if total_runs else 0
+    page = min(page, max_page)  # clamp in case rows were deleted
+
+    col_back, col_title, col_clear = st.columns([1, 4, 2])
+    with col_back:
+        if st.button("← Back"):
+            for k in ("_viewed_run_id", "_history_page", "_confirming_clear"):
+                st.session_state.pop(k, None)
+            st.rerun()
+    with col_title:
+        st.caption(f"🗂 All audit history · {total_runs} runs")
+    with col_clear:
+        if total_runs > 0 and not st.session_state.get("_confirming_clear"):
+            if st.button("🗑 Clear all", key="clear_all_btn", use_container_width=True):
+                st.session_state["_confirming_clear"] = True
+                st.rerun()
+
+    # Confirmation banner — two-step destructive action
+    if st.session_state.get("_confirming_clear"):
+        with st.container(border=True):
+            st.warning(f"Permanently delete all {total_runs} audit runs? This cannot be undone.")
+            c1, c2, _ = st.columns([2, 1, 4])
+            with c1:
+                if st.button("Yes, delete all", type="primary", key="confirm_clear_yes"):
+                    audit_history.clear_all()
+                    for k in ("_confirming_clear", "_history_page"):
+                        st.session_state.pop(k, None)
+                    st.rerun()
+            with c2:
+                if st.button("Cancel", key="confirm_clear_no"):
+                    st.session_state.pop("_confirming_clear", None)
+                    st.rerun()
+
+    runs_page = audit_history.list_runs(
+        limit=_HISTORY_PAGE_SIZE,
+        offset=page * _HISTORY_PAGE_SIZE,
+    )
+    if not runs_page:
+        st.info("No audit runs yet.")
+    for run in runs_page:
+        with st.container(border=True):
+            col_info, col_view, col_del = st.columns([6, 1, 1])
+            ts = run["timestamp"][:16].replace("T", " ")
+            severities = json.loads(run["severities"])
+            sev_str = " · ".join(
+                f"{severities[k]} {k}"
+                for k in ("critical", "high", "medium", "low", "info")
+                if severities.get(k)
+            ) or "no findings"
+            artifacts_list = json.loads(run["artifacts"])
+            arts = ", ".join(artifacts_list[:3])
+            if len(artifacts_list) > 3:
+                arts += f" +{len(artifacts_list) - 3}"
+            with col_info:
+                st.markdown(f"**{ts} UTC** · {run['total']} findings · {sev_str}")
+                if arts:
+                    st.caption(f"📎 {arts}")
+            with col_view:
+                if st.button("View", key=f"all_view_{run['id']}", use_container_width=True):
+                    st.session_state["_viewed_run_id"] = run["id"]
+                    st.rerun()
+            with col_del:
+                if st.button("🗑", key=f"all_del_{run['id']}", help="Delete this run"):
+                    audit_history.delete_run(run["id"])
+                    st.rerun()
+
+    # Page navigation
+    if total_runs > _HISTORY_PAGE_SIZE:
+        col_prev, col_info, col_next = st.columns([1, 3, 1])
+        with col_prev:
+            if st.button("← Previous", disabled=(page == 0), use_container_width=True):
+                st.session_state["_history_page"] = page - 1
+                st.rerun()
+        with col_info:
+            st.caption(f"Page {page + 1} of {max_page + 1}")
+        with col_next:
+            if st.button("Next →", disabled=(page >= max_page), use_container_width=True):
+                st.session_state["_history_page"] = page + 1
+                st.rerun()
+
+    st.stop()
+
+# Single run view (id is an int)
+if _viewed:
+    run = audit_history.get_run(_viewed)
+    if run:
+        col_back, col_ts = st.columns([1, 5])
+        with col_back:
+            if st.button("← Back"):
+                del st.session_state["_viewed_run_id"]
+                st.rerun()
+        with col_ts:
+            severities = json.loads(run["severities"])
+            sev_str = " · ".join(
+                f"{severities[k]} {k}"
+                for k in ("critical", "high", "medium", "low", "info")
+                if severities.get(k)
+            )
+            st.caption(f"🗂 Audit from **{run['timestamp'][:16].replace('T', ' ')} UTC** · {run['total']} findings · {sev_str}")
+
+        st.markdown(_render_markdown_with_pills(run["report_md"]), unsafe_allow_html=True)
+
+        if run.get("oscal_json"):
+            st.download_button(
+                label="⬇ Export OSCAL Assessment Results",
+                data=run["oscal_json"],
+                file_name=f"oscal-historical-{run['id']}.json",
+                mime="application/json",
+                help="NIST OSCAL 1.1.2 Assessment Results JSON from this historical run.",
+            )
+    else:
+        st.warning("Run not found.")
+        del st.session_state["_viewed_run_id"]
+    st.stop()  # Don't render the chat below
+
+
+# ---- Welcome panel (only when chat is empty) -------------------------------
 
 if not st.session_state.messages:
     st.markdown(
@@ -706,7 +900,8 @@ if not st.session_state.messages:
     <div class="mode-title"><span class="bullet"></span> Run an audit</div>
     <div class="mode-body">
       Attach a config, log, policy PDF, or codebase path. Findings get enriched with CVSS, EPSS,
-      CISA KEV, ATT&amp;CK techniques, and cross-framework mappings &mdash; then exportable as OSCAL 1.1.2.
+      CISA KEV, ATT&amp;CK techniques, cross-framework mappings, and secrets scanning &mdash;
+      then exportable as OSCAL 1.1.2.
     </div>
   </div>
 </div>
@@ -715,7 +910,7 @@ if not st.session_state.messages:
     )
 
 
-# ---- Chat history rendering -----------------------------------------------
+# ---- Chat history rendering ------------------------------------------------
 
 for msg in st.session_state.messages:
     role = "user" if isinstance(msg, HumanMessage) else "assistant"
@@ -723,7 +918,7 @@ for msg in st.session_state.messages:
         st.markdown(_render_markdown_with_pills(msg.content), unsafe_allow_html=True)
 
 
-# ---- Input handling -------------------------------------------------------
+# ---- Input handling --------------------------------------------------------
 
 prompt = st.chat_input("Ask a compliance question or describe what to audit...")
 if prompt:
@@ -744,29 +939,66 @@ if prompt:
             )
 
     with st.chat_message("assistant"):
-        spinner_msg = "Running audit pipeline..." if artifacts else "Querying frameworks..."
-        with st.spinner(spinner_msg):
-            result = AUDITOR_GRAPH.invoke(
-                {
-                    "messages": st.session_state.messages,
-                    "target_frameworks": target_frameworks,
-                    "artifacts": artifacts,
-                }
-            )
-        answer = result.get("final_report") or (
-            result["messages"][-1].content if result.get("messages") else "(no response)"
-        )
-        st.markdown(_render_markdown_with_pills(answer), unsafe_allow_html=True)
-        st.session_state.messages.append(AIMessage(content=answer))
+        # ── Compliance path — stream the LLM answer token-by-token ───────
+        if not artifacts:
+            try:
+                answer = st.write_stream(
+                    stream_compliance_answer(prompt, target_frameworks or None)
+                )
+            except Exception as exc:
+                answer = f"_(Error generating response: {exc})_"
+                st.markdown(answer)
+            st.session_state.messages.append(AIMessage(content=str(answer)))
 
-        findings = result.get("findings") or []
-        if findings:
-            oscal_doc = to_oscal_assessment_results(findings)
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-            st.download_button(
-                label="Export OSCAL Assessment Results",
-                data=json.dumps(oscal_doc, indent=2),
-                file_name=f"oscal-assessment-results-{timestamp}.json",
-                mime="application/json",
-                help="NIST OSCAL 1.1.2 Assessment Results JSON. Ingestible by FedRAMP / Trestle / RegScale.",
-            )
+        # ── Audit path — graph with step-by-step progress ─────────────────
+        else:
+            inputs = {
+                "messages": st.session_state.messages,
+                "target_frameworks": target_frameworks,
+                "artifacts": artifacts,
+            }
+            final_report: str | None = None
+            findings = []
+
+            with st.status("⚙️ Running audit pipeline…", expanded=True) as status:
+                try:
+                    for chunk in AUDITOR_GRAPH.stream(inputs, stream_mode="updates"):
+                        for node_name, state_update in chunk.items():
+                            label = _AUDIT_NODE_LABELS.get(node_name, f"Running {node_name}…")
+                            status.write(label)
+                            if isinstance(state_update, dict):
+                                if state_update.get("final_report"):
+                                    final_report = state_update["final_report"]
+                                if state_update.get("findings"):
+                                    findings = state_update["findings"]
+                    status.update(label="✅ Audit complete", state="complete")
+                except Exception as exc:
+                    status.update(label="❌ Audit error", state="error")
+                    final_report = f"_(Audit pipeline error: {exc})_"
+
+            answer = final_report or "_(No report generated.)_"
+            st.markdown(_render_markdown_with_pills(answer), unsafe_allow_html=True)
+            st.session_state.messages.append(AIMessage(content=answer))
+
+            if findings:
+                oscal_doc = to_oscal_assessment_results(findings)
+                oscal_str = json.dumps(oscal_doc, indent=2)
+                timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+                st.download_button(
+                    label="⬇ Export OSCAL Assessment Results",
+                    data=oscal_str,
+                    file_name=f"oscal-assessment-results-{timestamp}.json",
+                    mime="application/json",
+                    help="NIST OSCAL 1.1.2 Assessment Results JSON. Ingestible by FedRAMP / Trestle / RegScale.",
+                )
+
+                # Persist the run to history
+                sev_counts = dict(Counter(f.severity for f in findings))
+                artifact_names = [a.name for a in artifacts]
+                audit_history.save_run(
+                    artifact_names=artifact_names,
+                    total=len(findings),
+                    severities=sev_counts,
+                    report_md=answer,
+                    oscal_json=oscal_str,
+                )

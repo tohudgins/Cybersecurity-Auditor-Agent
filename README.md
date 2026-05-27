@@ -23,9 +23,10 @@ Every finding is enriched with industry-standard context before rendering:
 | **CISA KEV** | [CISA Known Exploited Vulnerabilities](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) | Bumps actively-exploited CVEs to `critical` with a `[KEV - actively exploited]` badge |
 | **EPSS** | [FIRST.org Exploit Prediction](https://www.first.org/epss/) | Probability + percentile that the CVE will be exploited in the next 30 days |
 | **CVSS v3** | NVD via Trivy | Numeric base score + vector + qualitative severity (e.g., `9.8 (Critical)`) |
-| **MITRE ATT&CK** | Curated keyword map → [ATT&CK Enterprise](https://attack.mitre.org/) | Tags findings with technique IDs (e.g., brute-force log → `T1110.001`) |
+| **MITRE ATT&CK** | Curated keyword map + full ATT&CK Enterprise STIX bundle from [mitre/cti](https://github.com/mitre/cti) (7-day cache) | Tags findings with technique IDs (e.g., brute-force log → `T1110.001`). Two layers: hand-curated high-precision rules, plus multi-word phrase matching across all ~600 ATT&CK techniques. |
 | **Cross-framework mappings** | NIST OLIR + curated | Resolves every NIST 800-53 control to CSF 2.1, CIS v8.1, ISO 27001:2022, PCI DSS v4, SOC 2 TSC ([`data/mappings/control_mappings.json`](data/mappings/control_mappings.json)) |
 | **OSCAL export** | NIST [OSCAL 1.1.2](https://pages.nist.gov/OSCAL/reference/latest/assessment-results/) | Every audit run downloadable as Assessment Results JSON (FedRAMP / Trestle / RegScale-ingestible). All enrichment fields above surface as OSCAL `props`. |
+| **Audit history** | Local SQLite at `~/.cache/auditor/history.db` | Every completed run is persisted with its report + OSCAL JSON. Sidebar shows the 3 most recent; "View all" opens a paged browser with per-row delete and confirmed bulk clear. |
 
 ---
 
@@ -143,7 +144,7 @@ To add a new framework: drop the PDF in `data/` (or add a `WebSource` in `ingest
 | `policy_pdf` | Internal security policy PDF | `tools/audit_policy_pdf.py` |
 | `config` | `sshd_config`, `nginx.conf`, `Dockerfile`, `*.tf`, Kubernetes YAML | `tools/audit_config.py` |
 | `log` | `auth.log`, syslog, JSON event logs | `tools/audit_logs.py` |
-| `codebase` | Local directory path; Trivy scans CVEs in deps + Bandit for Python SAST | `tools/audit_codebase.py` |
+| `codebase` | Local directory path; Trivy scans CVEs in deps + Bandit for Python SAST + gitleaks for secrets (regex fallback if gitleaks isn't installed) | `tools/audit_codebase.py` |
 
 ---
 
@@ -151,7 +152,11 @@ To add a new framework: drop the PDF in `data/` (or add a `WebSource` in `ingest
 
 ```bash
 git clone <your-repo-url>
-cd "Cybersecurity Auditor Agent"
+cd Cybersecurity-Auditor-Agent
+
+# Recommended: isolate dependencies in a virtual env
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
 cp .env.example .env
 # edit .env and set OPENAI_API_KEY
@@ -188,9 +193,14 @@ export OPENAI_API_KEY=sk-...
 docker compose up --build
 ```
 
-First boot fetches markdown sources and embeds everything (~2-3 min, ~$0.20 of OpenAI credits). The named `chromadb` volume persists embeddings so subsequent starts skip the build.
+First boot fetches markdown sources, embeds everything (~2-3 min, ~$0.20 of OpenAI credits), and pre-warms the MITRE ATT&CK STIX cache. Two named volumes are mounted:
 
-The image: `python:3.12-slim` + Trivy from Aqua's Debian repo + Checkov/Bandit via pip. Entrypoint is `docker/entrypoint.sh`.
+- `chromadb` → `/app/.chromadb` — framework embeddings
+- `auditor_cache` → `/root/.cache/auditor` — KEV / EPSS / ATT&CK STIX caches and the SQLite audit history
+
+Both persist across container restarts.
+
+The image: `python:3.12-slim` + Trivy (from Aqua's Debian repo) + gitleaks (multi-arch binary) + Checkov/Bandit via pip. Entrypoint is `docker/entrypoint.sh`.
 
 Without docker-compose:
 ```bash
@@ -204,7 +214,7 @@ docker run -p 8501:8501 -e OPENAI_API_KEY=sk-... -v auditor-chromadb:/app/.chrom
 
 > Live URL will be added here after the first deploy.
 
-The hosted version runs **compliance Q&A**, **policy PDF audit**, **config / IaC audits via Checkov**, and **OSCAL export**. Codebase scanning (Trivy) is not available because Streamlit Cloud doesn't ship Trivy on its PATH — the agent surfaces a graceful "Trivy not installed" info finding. For full functionality, use the local Docker setup.
+The hosted version runs **compliance Q&A** (with streaming output), **policy PDF audit**, **config / IaC audits via Checkov**, **Python SAST via Bandit**, **OSCAL export**, and **audit history**. Codebase CVE scanning (Trivy) and secrets scanning (gitleaks) are not available on Streamlit Cloud because system binaries can't be installed — the agent gracefully surfaces info findings for Trivy and falls back to regex patterns for secrets. For full functionality, use the local Docker setup.
 
 ---
 
@@ -225,14 +235,15 @@ The hosted version runs **compliance Q&A**, **policy PDF audit**, **config / IaC
 ├── src/auditor/
 │   ├── config.py                   # Settings (paths, model names, k)
 │   ├── models.py                   # Finding, Artifact
+│   ├── history.py                  # SQLite audit run history
 │   ├── ingest/                     # PDF + markdown loader + GitHub fetcher
 │   ├── retrieval/                  # Hybrid BM25 + vector retrieval (RRF fusion)
-│   ├── tools/                      # compliance_qa, framework_summary, audit_*
-│   ├── enrichment/                 # CISA KEV, EPSS, MITRE ATT&CK, control mappings
+│   ├── tools/                      # compliance_qa (sync + streaming), framework_summary, audit_*
+│   ├── enrichment/                 # CISA KEV, EPSS, MITRE ATT&CK (curated + STIX), control mappings
 │   ├── oscal/                      # NIST OSCAL Assessment Results exporter
 │   ├── prompts/                    # PromptTemplates kept separate from logic
 │   └── agents/                     # supervisor, compliance, audit, reporting + graph
-└── tests/                          # pytest (LLM + retriever + network stubbed)
+└── tests/                          # pytest (LLM + retriever + KEV/EPSS/STIX all stubbed)
 ```
 
 ---
@@ -266,8 +277,9 @@ pytest tests/test_audit_config.py   # single file
 | **[Trivy](https://aquasecurity.github.io/trivy/)** | `codebase` (CVE scanning) | `scoop install trivy` / `brew install trivy` / [releases](https://github.com/aquasecurity/trivy/releases) |
 | **[Checkov](https://www.checkov.io/)** | `config` (Terraform / K8s IaC) | `pip install checkov` |
 | **[Bandit](https://bandit.readthedocs.io/)** | `codebase` (Python SAST) | `pip install bandit` |
+| **[gitleaks](https://github.com/gitleaks/gitleaks)** | `codebase` (secrets) | `brew install gitleaks` / [releases](https://github.com/gitleaks/gitleaks/releases) — if missing, a built-in regex fallback covers AWS keys, OpenAI keys, GitHub tokens, hardcoded passwords, and embedded private keys. |
 
-If a scanner isn't on PATH, the corresponding tool emits an info-level finding with the install hint and falls back to the regex heuristics — the demo still runs.
+If a scanner isn't on PATH, the corresponding tool emits an info-level finding with the install hint and falls back to either regex heuristics or a degraded mode — the demo still runs.
 
 ---
 
@@ -279,7 +291,7 @@ Deliberate v1 cuts; happy to revisit:
 - **CIS Foundations Benchmarks** — ingest the AWS / Azure / GCP benchmarks and route Terraform findings to the cloud-specific catalog.
 - **Custom Checkov policies** tagging NIST 800-53 control IDs (stock rules tag CIS only).
 - **Live cloud-API scanning** — AWS Config / Azure Policy ingestion instead of file uploads.
-- **Multi-user persistence** — audit history, RBAC, shareable report links.
+- **Multi-user persistence** — RBAC and shareable report links on top of the existing per-user SQLite history.
 
 ---
 

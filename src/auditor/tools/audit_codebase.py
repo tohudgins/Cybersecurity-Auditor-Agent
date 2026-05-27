@@ -1,16 +1,20 @@
-"""Audit a codebase via Trivy (CVEs in deps) + Bandit (Python SAST).
+"""Audit a codebase via Trivy (CVEs in deps) + Bandit (Python SAST) + secrets scan.
 
-Two industry-standard scanners, both invoked via subprocess. Trivy always runs;
-Bandit only runs if `*.py` files are present in the path.
+Three scanners, all invoked via subprocess or regex fallback:
+- Trivy   — CVEs in dependency manifests (always runs)
+- Bandit  — Python SAST (only when *.py files are present)
+- Secrets — gitleaks if installed, else regex patterns for common secret formats
 
 References:
-- Trivy: https://aquasecurity.github.io/trivy/
-- Bandit: https://bandit.readthedocs.io/
+- Trivy:    https://aquasecurity.github.io/trivy/
+- Bandit:   https://bandit.readthedocs.io/
+- gitleaks: https://github.com/gitleaks/gitleaks
 """
 from __future__ import annotations
 
 import json
 import logging
+import re
 import subprocess
 from pathlib import Path
 
@@ -243,6 +247,176 @@ def _run_bandit(scanned_path: str) -> list[Finding]:
     return [_bandit_issue_to_finding(issue, scanned_path) for issue in data.get("results") or []]
 
 
+# ---- Secrets scanning ------------------------------------------------------
+
+_GITLEAKS_INSTALL_HINT = (
+    "gitleaks is not installed. Install: `brew install gitleaks` (macOS) "
+    "or download from https://github.com/gitleaks/gitleaks/releases"
+)
+
+# Regex fallback patterns: (pattern, title, control_id)
+# Used when gitleaks is not on PATH.
+_SECRET_PATTERNS: list[tuple[str, str, str]] = [
+    (r"AKIA[0-9A-Z]{16}", "AWS Access Key ID found in source", "IA-5"),
+    (
+        r"(?i)(password|passwd|pwd)\s*[=:]\s*[\"']?(?!\$\{|{{)[^\s\"'\\]{8,}",
+        "Hardcoded password in source",
+        "IA-5",
+    ),
+    (
+        r"(?i)(api[_-]?key|apikey|secret[_-]?key|auth[_-]?token)\s*[=:]\s*[\"']?[a-zA-Z0-9_\-]{20,}",
+        "Hardcoded API key / token in source",
+        "IA-5",
+    ),
+    (r"-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----", "Private key embedded in source", "SC-28"),
+    (r"sk-[a-zA-Z0-9]{48}", "OpenAI API key in source", "IA-5"),
+    (r"gh[pousr]_[A-Za-z0-9]{36}", "GitHub token in source", "IA-5"),
+]
+
+# Directories / suffixes to skip in the regex fallback walk
+_SKIP_DIRS = frozenset({
+    ".git", ".venv", "venv", "__pycache__", "node_modules",
+    ".chromadb", "dist", "build", ".tox",
+})
+_SCAN_SUFFIXES = frozenset({
+    ".py", ".js", ".ts", ".go", ".java", ".rb", ".php",
+    ".env", ".cfg", ".conf", ".yaml", ".yml", ".json",
+    ".toml", ".sh", ".tf", ".tfvars", ".ini", ".xml",
+})
+
+
+def _iter_text_files(root: Path, limit: int = 500):
+    """Yield candidate text files for secret scanning, skipping noise dirs."""
+    count = 0
+    for fpath in root.rglob("*"):
+        if count >= limit:
+            break
+        if not fpath.is_file():
+            continue
+        if any(part in _SKIP_DIRS for part in fpath.parts):
+            continue
+        if fpath.suffix.lower() in _SCAN_SUFFIXES or fpath.name.startswith(".env"):
+            yield fpath
+            count += 1
+
+
+def _secrets_via_regex(scanned_path: str) -> list[Finding]:
+    """Regex-based secret detection fallback (used when gitleaks is absent)."""
+    findings: list[Finding] = []
+    root = Path(scanned_path)
+    seen: set[str] = set()  # deduplicate by (file, line, pattern)
+
+    for fpath in _iter_text_files(root):
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+
+        for pattern, title, control_id in _SECRET_PATTERNS:
+            for m in re.finditer(pattern, content, re.MULTILINE):
+                lineno = content[: m.start()].count("\n") + 1
+                try:
+                    rel = str(fpath.relative_to(root))
+                except ValueError:
+                    rel = str(fpath)
+                key = f"{rel}:{lineno}:{pattern}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                snippet = m.group(0)[:80]
+                findings.append(
+                    Finding(
+                        title=title,
+                        severity="high",
+                        framework="NIST SP 800-53 Rev. 5",
+                        control_id=control_id,
+                        evidence=f"{rel}:{lineno} — `{snippet}`",
+                        recommendation=(
+                            "Remove the secret from source. Store it in an environment variable "
+                            "or a secrets manager (e.g., AWS Secrets Manager, HashiCorp Vault). "
+                            "Rotate the credential immediately if it was ever committed."
+                        ),
+                        source_artifact=scanned_path,
+                    )
+                )
+    return findings
+
+
+def _try_gitleaks(scanned_path: str) -> list[Finding] | None:
+    """Run gitleaks.  Returns:
+
+    - ``list[Finding]`` (possibly empty) if gitleaks ran and produced parseable output.
+    - ``None`` if gitleaks isn't installed or returned unusable output, so the
+      caller should fall back to the regex scanner.
+    """
+    cmd = [
+        "gitleaks", "detect",
+        "--source", scanned_path,
+        "--report-format", "json",
+        "--no-git",          # scan the working tree, not git history
+        "--exit-code", "0",  # always exit 0 so we parse stdout ourselves
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    except FileNotFoundError:
+        return None  # gitleaks not on PATH
+
+    if not proc.stdout.strip():
+        return []  # gitleaks ran cleanly, found nothing
+
+    try:
+        leaks = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return None  # malformed output — let regex fallback try
+
+    if not isinstance(leaks, list):
+        return None  # unexpected schema — let regex fallback try
+
+    findings: list[Finding] = []
+    for leak in leaks:
+        if not isinstance(leak, dict):
+            continue
+        findings.append(
+            Finding(
+                title=f"Secret detected: {leak.get('Description', 'unknown')}",
+                severity="high",
+                framework="NIST SP 800-53 Rev. 5",
+                control_id="IA-5",
+                evidence=(
+                    f"{leak.get('File', '?')}:{leak.get('StartLine', '?')}"
+                    f" — rule `{leak.get('RuleID', '?')}`"
+                ),
+                recommendation=(
+                    "Remove the secret from source code and rotate the credential. "
+                    "Store secrets in environment variables or a secrets manager."
+                ),
+                source_artifact=scanned_path,
+            )
+        )
+    return findings
+
+
+def _run_secrets_scan(scanned_path: str) -> list[Finding]:
+    """Scan for hardcoded secrets using gitleaks (preferred) or regex fallback."""
+    gitleaks_findings = _try_gitleaks(scanned_path)
+    if gitleaks_findings is not None:
+        # gitleaks ran successfully — trust its result (even if empty)
+        return gitleaks_findings
+
+    # Gitleaks unavailable or broken — fall back to regex patterns
+    regex_findings = _secrets_via_regex(scanned_path)
+    if not regex_findings:
+        return []
+
+    info = _info(
+        title="Secret scan used regex fallback (gitleaks not installed)",
+        evidence="`gitleaks` binary not found on PATH; used built-in regex patterns instead.",
+        recommendation=_GITLEAKS_INSTALL_HINT,
+        source=scanned_path,
+    )
+    return [info, *regex_findings]
+
+
 # ---- Public entry point ----------------------------------------------------
 
 
@@ -263,5 +437,7 @@ def audit_codebase(path: str | Path) -> list[Finding]:
 
     if _has_python_files(Path(scanned_path)):
         findings.extend(_run_bandit(scanned_path))
+
+    findings.extend(_run_secrets_scan(scanned_path))
 
     return findings
