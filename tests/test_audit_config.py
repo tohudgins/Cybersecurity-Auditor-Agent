@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from auditor.tools import audit_config as ac
 from auditor.tools.audit_config import (
-    _check_dockerfile,
+    _check_dockerfile_regex,
     _check_kubernetes_regex,
     _check_sshd,
     _check_terraform_regex,
@@ -31,7 +31,7 @@ def test_sshd_heuristics_flag_root_login_and_passwords():
 
 def test_dockerfile_heuristics_flag_root_and_latest_tag():
     df = "FROM python:latest\nRUN apt-get update\n"
-    findings = _check_dockerfile(df)
+    findings = _check_dockerfile_regex(df)
     titles = {f.title for f in findings}
     assert any("runs as root" in t for t in titles)
     assert any(":latest" in t for t in titles)
@@ -133,6 +133,57 @@ def test_checkov_handles_list_shaped_output(monkeypatch):
     monkeypatch.setattr(subprocess, "run", lambda *_a, **_kw: _fake_run(stdout=json.dumps(payload)))
     out = audit_config("foo", "main.tf")
     assert any("CKV_AWS_24" in f.title for f in out)
+
+
+# ---- Hadolint path --------------------------------------------------------
+
+_FAKE_HADOLINT_OUTPUT = [
+    {
+        "file": "/tmp/x.Dockerfile",
+        "line": 1,
+        "column": 1,
+        "level": "warning",
+        "code": "DL3006",
+        "message": "Always tag the version of an image explicitly",
+    },
+    {
+        "file": "/tmp/x.Dockerfile",
+        "line": 5,
+        "column": 1,
+        "level": "error",
+        "code": "DL3002",
+        "message": "Last USER should not be root",
+    },
+]
+
+
+def test_dockerfile_uses_hadolint_when_available(monkeypatch):
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_a, **_kw: _fake_run(stdout=json.dumps(_FAKE_HADOLINT_OUTPUT)),
+    )
+    out = audit_config("FROM python\nUSER root\n", "Dockerfile")
+    by_code = {f.title.split("]")[0].lstrip("["): f for f in out if f.title.startswith("[DL")}
+    assert "DL3006" in by_code
+    assert "DL3002" in by_code
+    assert by_code["DL3006"].severity == "medium"  # warning → medium
+    assert by_code["DL3002"].severity == "high"    # error → high
+    assert by_code["DL3002"].control_id == "CM-6"
+    assert by_code["DL3002"].framework == "NIST SP 800-53 Rev. 5"
+    # Should NOT include the regex fallback hint when hadolint ran.
+    assert not any("falling back to regex" in f.title for f in out)
+
+
+def test_dockerfile_falls_back_to_regex_when_hadolint_missing(monkeypatch):
+    def _raise(*_a, **_kw):
+        raise FileNotFoundError("hadolint not found")
+
+    monkeypatch.setattr(subprocess, "run", _raise)
+    out = audit_config("FROM python:latest\nRUN apt-get update\n", "Dockerfile")
+    titles = [f.title for f in out]
+    assert any("hadolint not installed" in t for t in titles)
+    assert any(":latest" in t for t in titles)  # regex fallback still fires
 
 
 def test_run_checkov_silent_on_clean_input(monkeypatch):

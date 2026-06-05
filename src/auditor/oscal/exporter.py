@@ -52,6 +52,8 @@ def _observation(finding: Finding, run_id: str) -> dict:
 def _finding_props(finding: Finding) -> list[dict]:
     """Emit OSCAL `prop` entries for our non-standard fields (CVSS, KEV, ATT&CK, EPSS, mappings)."""
     props: list[dict] = [{"name": "severity", "value": finding.severity}]
+    if finding.risk_score is not None:
+        props.append({"name": "risk-score", "value": f"{finding.risk_score:.1f}"})
     if finding.cvss_score is not None:
         props.append({"name": "cvss-v3-base-score", "value": f"{finding.cvss_score:.1f}"})
     if finding.cvss_vector:

@@ -65,14 +65,14 @@ def test_audit_codebase_parses_two_vulns(monkeypatch, tmp_path):
 
 def test_audit_codebase_handles_missing_trivy(monkeypatch, tmp_path):
     def _raise(*_args, **_kwargs):
-        raise FileNotFoundError("trivy not found")
+        raise FileNotFoundError("scanner not found")
 
     monkeypatch.setattr(subprocess, "run", _raise)
 
     findings = ac.audit_codebase(tmp_path)
-    assert len(findings) == 1
-    assert findings[0].severity == "info"
-    assert "Trivy" in findings[0].title
+    # Both Trivy and Semgrep are always-on, so each reports "not installed".
+    assert all(f.severity == "info" for f in findings)
+    assert any("Trivy" in f.title for f in findings)
 
 
 def test_audit_codebase_handles_nonexistent_path(monkeypatch):
@@ -92,6 +92,51 @@ def test_audit_codebase_empty_results(monkeypatch, tmp_path):
         lambda *_, **__: _fake_run(stdout=json.dumps({"SchemaVersion": 2, "Results": []})),
     )
     assert ac.audit_codebase(tmp_path) == []
+
+
+# ---- Trivy misconfiguration -------------------------------------------------
+
+_FAKE_TRIVY_MISCONFIG_OUTPUT = {
+    "SchemaVersion": 2,
+    "Results": [
+        {
+            "Target": "infra/Dockerfile",
+            "Class": "config",
+            "Type": "dockerfile",
+            "Misconfigurations": [
+                {
+                    "ID": "DS002",
+                    "AVDID": "AVD-DS-0002",
+                    "Title": "Image user should not be 'root'",
+                    "Description": "Running containers with 'root' user can lead to escalation.",
+                    "Message": "Specify at least 1 USER command with a non-root user.",
+                    "Severity": "HIGH",
+                    "Resolution": "Add 'USER <non root user name>' to the Dockerfile.",
+                    "PrimaryURL": "https://avd.aquasec.com/misconfig/ds002",
+                    "CauseMetadata": {"StartLine": 1, "EndLine": 1},
+                }
+            ],
+        }
+    ],
+}
+
+
+def test_audit_codebase_parses_trivy_misconfig(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_, **__: _fake_run(stdout=json.dumps(_FAKE_TRIVY_MISCONFIG_OUTPUT)),
+    )
+
+    findings = ac.audit_codebase(tmp_path)
+    mis = [f for f in findings if "AVD-DS-0002" in f.title]
+    assert len(mis) == 1
+    f = mis[0]
+    assert f.severity == "high"
+    assert f.framework == "NIST SP 800-53 Rev. 5"
+    assert f.control_id == "CM-6"
+    assert "infra/Dockerfile:1" in f.evidence
+    assert "USER" in f.recommendation
 
 
 # ---- Bandit -----------------------------------------------------------------
@@ -226,6 +271,95 @@ def test_audit_codebase_handles_missing_bandit(monkeypatch, tmp_path):
     findings = ac.audit_codebase(tmp_path)
     bandit_msg = [f for f in findings if "Bandit not installed" in f.title]
     assert len(bandit_msg) == 1
+
+
+# ---- Semgrep ----------------------------------------------------------------
+
+_FAKE_SEMGREP_OUTPUT = {
+    "errors": [],
+    "results": [
+        {
+            "check_id": "javascript.express.security.audit.express-cookie-session-no-httponly",
+            "path": "/scan/server/app.js",
+            "start": {"line": 27, "col": 3},
+            "end": {"line": 27, "col": 40},
+            "extra": {
+                "message": "Cookie set without the HttpOnly flag, exposing it to client-side scripts.",
+                "severity": "WARNING",
+                "lines": "res.cookie('session', token)",
+                "metadata": {
+                    "cwe": ["CWE-1004: Sensitive Cookie Without 'HttpOnly' Flag"],
+                    "owasp": ["A05:2021 - Security Misconfiguration"],
+                    "references": ["https://owasp.org/www-community/HttpOnly"],
+                },
+            },
+        },
+        {
+            "check_id": "go.lang.security.audit.sql-injection.sqli",
+            "path": "/scan/db/query.go",
+            "start": {"line": 88, "col": 9},
+            "end": {"line": 88, "col": 60},
+            "extra": {
+                "message": "Detected string concatenation in a SQL query.",
+                "severity": "ERROR",
+                "lines": 'db.Query("SELECT * FROM t WHERE id=" + id)',
+                "metadata": {"cwe": "CWE-89: SQL Injection"},
+            },
+        },
+    ],
+}
+
+
+def test_audit_codebase_runs_semgrep(monkeypatch, tmp_path):
+    def _route(cmd, *_a, **_kw):
+        if cmd and cmd[0] == "semgrep":
+            return _fake_run(stdout=json.dumps(_FAKE_SEMGREP_OUTPUT))
+        return _fake_run(stdout=json.dumps({"SchemaVersion": 2, "Results": []}))
+
+    monkeypatch.setattr(subprocess, "run", _route)
+
+    findings = ac.audit_codebase(tmp_path)
+    sg = [f for f in findings if f.title.startswith("[semgrep]")]
+    assert len(sg) == 2
+
+    warn = next(f for f in sg if "httponly" in f.title.lower())
+    err = next(f for f in sg if "sqli" in f.title.lower())
+
+    assert warn.severity == "medium"  # WARNING → medium
+    assert warn.framework == "OWASP ASVS 5.0"
+    assert warn.control_id == "CWE-1004"
+    assert "HttpOnly" in warn.evidence
+    assert "owasp.org" in warn.recommendation  # first reference surfaced
+
+    assert err.severity == "high"  # ERROR → high
+    assert err.control_id == "CWE-89"  # bare-string cwe also parsed
+
+
+def test_audit_codebase_handles_missing_semgrep(monkeypatch, tmp_path):
+    def _route(cmd, *_a, **_kw):
+        if cmd and cmd[0] == "semgrep":
+            raise FileNotFoundError("semgrep not found")
+        return _fake_run(stdout=json.dumps({"SchemaVersion": 2, "Results": []}))
+
+    monkeypatch.setattr(subprocess, "run", _route)
+    findings = ac.audit_codebase(tmp_path)
+    sg_msg = [f for f in findings if "Semgrep not installed" in f.title]
+    assert len(sg_msg) == 1
+    assert sg_msg[0].severity == "info"
+
+
+def test_audit_codebase_semgrep_runs_without_python(monkeypatch, tmp_path):
+    """Semgrep is multi-language, so it runs even when there are no .py files."""
+    called: dict[str, bool] = {"semgrep": False}
+
+    def _route(cmd, *_a, **_kw):
+        if cmd and cmd[0] == "semgrep":
+            called["semgrep"] = True
+        return _fake_run(stdout=json.dumps({"SchemaVersion": 2, "Results": []}))
+
+    monkeypatch.setattr(subprocess, "run", _route)
+    ac.audit_codebase(tmp_path)
+    assert called["semgrep"] is True
 
 
 # ---- Secrets scanning -------------------------------------------------------

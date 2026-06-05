@@ -53,8 +53,9 @@ pytest tests/test_audit_config.py::test_sshd_heuristics_flag_root_login_and_pass
             ▼                     ▼
      compliance_node          audit_node
      (hybrid BM25 +           (per-kind audit tool → findings →
-      vector retrieval         enrichment: ATT&CK keyword tagging,
-      + cited LLM)             cross-framework mapping lookup)
+      vector retrieval         enrichment: ATT&CK tagging + mapping
+      + cited LLM)             lookup → risk normalization:
+                               de-dup + 0-100 score + rank)
             │                     │
             └──────────┬──────────┘
                        ▼
@@ -81,9 +82,10 @@ pytest tests/test_audit_config.py::test_sshd_heuristics_flag_root_login_and_pass
 ### `tools/`
 - `compliance_qa.py` — vector retrieval + LLM synthesis with citations. Exposes both `answer_compliance_question()` (blocking) and `stream_compliance_answer()` (yields token chunks for `st.write_stream`).
 - `framework_summary.py` — pure LCEL pipeline (no `MultiQueryRetriever` or `load_summarize_chain` — those legacy umbrella imports were removed)
-- `audit_text.py` / `audit_policy_pdf.py` / `audit_logs.py` — LLM with retrieval context
-- `audit_config.py` — `detect_config_kind()` + per-kind regex heuristics merged with Checkov (Terraform / K8s) or LLM analysis
-- `audit_codebase.py` — Trivy (CVEs in deps, with CVSS + KEV + EPSS) + Bandit (Python SAST) + gitleaks secrets scanning with a regex fallback when gitleaks isn't on PATH. Bandit findings cite `OWASP ASVS 5.0`. Trivy findings cite `NIST SP 800-53 Rev. 5 / SI-2`. Secret findings cite `NIST SP 800-53 Rev. 5 / IA-5` (passwords/keys) or `SC-28` (private keys at rest).
+- `audit_text.py` / `audit_policy_pdf.py` — LLM with retrieval context
+- `audit_logs.py` — deterministic heuristics + LLM. Heuristics detect brute-force (≥5 failed logins/IP), successful login from a brute-forcing IP (critical, AC-7 compromise signal), direct root login, sudo without an audit trail (AU-2), web-attack signatures in access logs (SQLi/XSS/path-traversal/command-injection → SI-10 / AC-3), and log-tampering / anti-forensics (AU-9). LLM analysis layered on top, de-duped by title.
+- `audit_config.py` — `detect_config_kind()` + per-kind heuristics: sshd / nginx regex, Dockerfile via **hadolint** (regex fallback when absent, findings cite `NIST SP 800-53 Rev. 5 / CM-6`), Terraform / K8s via **Checkov** (regex fallback). LLM analysis merged on top, de-duped against heuristic findings.
+- `audit_codebase.py` — Trivy (dependency CVEs with CVSS + KEV + EPSS, **plus IaC/Dockerfile/Helm misconfigurations** via `--scanners vuln,misconfig`) + Semgrep (multi-language SAST, always runs) + Bandit (Python SAST, only when `*.py` present) + gitleaks secrets scanning with a regex fallback when gitleaks isn't on PATH. Semgrep runs `--config auto` (rules fetched from the registry + cached under `~/.semgrep`, `--metrics off`); findings cite `OWASP ASVS 5.0` with `control_id` set to the rule's CWE when present. Bandit findings cite `OWASP ASVS 5.0`. Trivy CVE findings cite `NIST SP 800-53 Rev. 5 / SI-2`; Trivy misconfig findings cite `CM-6`. Secret findings cite `NIST SP 800-53 Rev. 5 / IA-5` (passwords/keys) or `SC-28` (private keys at rest).
 - `_findings_llm.py` — shared helper wiring `ChatOpenAI.with_structured_output(_FindingList)` so every audit tool returns `list[Finding]`.
 
 ### `enrichment/`
@@ -91,17 +93,18 @@ pytest tests/test_audit_config.py::test_sshd_heuristics_flag_root_login_and_pass
 - `epss.py` — FIRST.org EPSS daily CSV, 24h cache. `epss_score(cve)` returns `(score, percentile) | None`.
 - `mitre.py` — two-layer ATT&CK tagging. Layer 1 is `_TECHNIQUE_KEYWORDS`, hand-curated substring rules. Layer 2 downloads the full ATT&CK Enterprise STIX bundle from `mitre/cti` on GitHub (7-day cache at `~/.cache/auditor/attack_techniques.json`) and matches multi-word technique names verbatim against finding text. `enrich_findings(findings)` annotates each finding's `attack_techniques` in place. Tests stub `_stix_phrases = {}` via conftest so the network is never touched.
 - `mappings.py` — loads `data/mappings/control_mappings.json` (NIST 800-53 anchor → CSF 2.1 / CIS / ISO / PCI / SOC 2). `enrich_with_mappings(findings)` populates `Finding.mapped_controls` for any finding tagged `framework="NIST SP 800-53 Rev. 5"`. `_base_id()` strips enhancement suffixes so `AC-2(1)` resolves to `AC-2`.
+- `risk.py` — the aggregation layer. `compute_risk_score(finding)` returns a deterministic 0-100 score (severity baseline, raised by CVSS×10, plus EPSS×10, floored at 95+3 for KEV). `deduplicate(findings)` collapses cross-tool duplicates by signature (same CVE; same `file:line` + CWE; or same normalized title within an artifact), keeping the highest-scoring member and noting corroboration. `normalize_findings(findings)` scores → de-dups → ranks (highest risk first) and is called last in `audit_node`, after ATT&CK + mapping enrichment. `Finding.risk_score` surfaces in the report (per-finding line), the report ordering, and the OSCAL `risk-score` prop.
 
 ### `history.py`
 - SQLite-backed audit run history at `~/.cache/auditor/history.db`. Exposes `save_run()`, `list_runs(limit, offset)`, `count_runs()`, `get_run(id)`, `delete_run(id)`, `clear_all()`. Every audit run is persisted automatically after `reporting_node` produces a report; the Streamlit sidebar surfaces the 3 most recent + a "View all" page with pagination + bulk delete.
 
 ### `oscal/`
-- `exporter.py` — `to_oscal_assessment_results(findings)` returns OSCAL 1.1.2 JSON. Deterministic UUIDv5 for stable observation/finding IDs across runs. All enrichment fields surface as OSCAL `props`: `severity`, `cvss-v3-base-score`, `cvss-v3-vector`, `epss-score`, `epss-percentile`, `cisa-kev`, `mitre-attack-technique`, `mapped-control` (with `class=<framework>`).
+- `exporter.py` — `to_oscal_assessment_results(findings)` returns OSCAL 1.1.2 JSON. Deterministic UUIDv5 for stable observation/finding IDs across runs. All enrichment fields surface as OSCAL `props`: `severity`, `risk-score`, `cvss-v3-base-score`, `cvss-v3-vector`, `epss-score`, `epss-percentile`, `cisa-kev`, `mitre-attack-technique`, `mapped-control` (with `class=<framework>`).
 
 ### `agents/`
 - `graph.py` — `AUDITOR_GRAPH` singleton, START → supervisor → conditional `{compliance | audit}` → reporting → END.
-- `audit_agent.py` — dispatches each `Artifact` to its tool, then calls `enrich_findings()` (ATT&CK) and `enrich_with_mappings()` (cross-framework).
-- `reporting_agent.py` — renders findings as Markdown. Per-finding lines: KEV badge, severity badge, mapped control, CVSS line, EPSS line, MITRE ATT&CK line, cross-framework line, source artifact, evidence, recommendation. Executive summary uses `gpt-5-mini` (fast_model).
+- `audit_agent.py` — dispatches each `Artifact` to its tool, then calls `enrich_findings()` (ATT&CK), `enrich_with_mappings()` (cross-framework), and finally `normalize_findings()` (de-dup + risk score + rank). Returns the normalized, ranked list.
+- `reporting_agent.py` — renders findings as Markdown, ordered by `risk_score` (desc). Per-finding lines: KEV badge, severity badge, risk score, mapped control, CVSS line, EPSS line, MITRE ATT&CK line, cross-framework line, source artifact, evidence, recommendation. Executive summary uses `gpt-5-mini` (fast_model).
 
 ## Streamlit UI flow
 

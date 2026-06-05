@@ -1,10 +1,13 @@
 FROM python:3.12-slim AS runtime
 
 ARG GITLEAKS_VERSION=8.21.2
+ARG HADOLINT_VERSION=2.12.0
 
-# Install Trivy (CVE scanner) + gitleaks (secrets scanner) in one layer.
+# Install Trivy (CVE + IaC misconfig scanner) + gitleaks (secrets) + hadolint
+# (Dockerfile linter) in one layer. Semgrep (multi-language SAST) is installed via
+# pip below as part of the `scanners` extra.
 # Trivy comes from Aqua Security's official Debian repo.
-# gitleaks ships only as a release binary, downloaded for the host architecture.
+# gitleaks and hadolint ship as release binaries, downloaded for the host architecture.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         wget gnupg ca-certificates \
     && wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key \
@@ -24,6 +27,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks \
     && chmod +x /usr/local/bin/gitleaks \
     && rm /tmp/gitleaks.tar.gz \
+    # hadolint: release binary named by arch (x86_64 / arm64)
+    && case "$DPKG_ARCH" in \
+         amd64) HL_ARCH=x86_64 ;; \
+         arm64) HL_ARCH=arm64 ;; \
+         *)     HL_ARCH=x86_64 ;; \
+       esac \
+    && wget -qO /usr/local/bin/hadolint \
+        "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-Linux-${HL_ARCH}" \
+    && chmod +x /usr/local/bin/hadolint \
     && apt-get purge -y wget gnupg \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*

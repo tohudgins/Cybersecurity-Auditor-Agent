@@ -9,6 +9,7 @@ from langchain_openai import ChatOpenAI
 
 from auditor.agents.state import AuditorState
 from auditor.config import settings
+from auditor.enrichment.risk import compute_risk_score
 from auditor.models import Finding
 from auditor.prompts.reporting import EXECUTIVE_SUMMARY_PROMPT
 
@@ -26,6 +27,9 @@ def _render_finding(idx: int, f: Finding) -> str:
     badge = _SEVERITY_BADGE.get(f.severity, f"**[{f.severity.upper()}]**")
     if f.kev:
         badge = "**[KEV - actively exploited]** " + badge
+
+    score = f.risk_score if f.risk_score is not None else compute_risk_score(f)
+    risk_line = f"- **Risk score:** {score:.0f} / 100\n"
 
     framework_line = ""
     if f.framework or f.control_id:
@@ -59,6 +63,7 @@ def _render_finding(idx: int, f: Finding) -> str:
     source_line = f"- **Source artifact:** `{f.source_artifact}`\n" if f.source_artifact else ""
     return (
         f"### {idx}. {badge} {f.title}\n"
+        f"{risk_line}"
         f"{framework_line}"
         f"{cvss_line}"
         f"{epss_line}"
@@ -102,7 +107,14 @@ def _executive_summary(findings: list[Finding], frameworks: list[str] | None) ->
 
 
 def _build_report(findings: list[Finding], frameworks: list[str] | None) -> str:
-    sorted_findings = sorted(findings, key=lambda f: _SEVERITY_ORDER.get(f.severity, 99))
+    sorted_findings = sorted(
+        findings,
+        key=lambda f: (
+            -(f.risk_score if f.risk_score is not None else compute_risk_score(f)),
+            _SEVERITY_ORDER.get(f.severity, 99),
+            f.title.lower(),
+        ),
+    )
 
     sev_counts: dict[str, int] = defaultdict(int)
     for f in sorted_findings:

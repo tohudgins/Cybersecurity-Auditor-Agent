@@ -1,7 +1,8 @@
 """Audit infrastructure / service config files for security misconfigurations.
 
 Pipeline:
-- sshd / Dockerfile / nginx: regex heuristics (Checkov doesn't cover these).
+- sshd / nginx: regex heuristics (no dedicated scanner covers these).
+- Dockerfile: hadolint (industry-standard Dockerfile linter) with regex fallback.
 - Terraform / Kubernetes: Checkov (industry-standard IaC scanner) with regex fallback
   if Checkov isn't installed locally.
 - All kinds: LLM analysis on top, de-duplicated against heuristic findings.
@@ -24,6 +25,10 @@ from auditor.tools._findings_llm import run_findings_chain
 
 class _CheckovMissing(Exception):
     """Raised when the `checkov` binary is not on PATH."""
+
+
+class _HadolintMissing(Exception):
+    """Raised when the `hadolint` binary is not on PATH."""
 
 # ---- File type detection ---------------------------------------------------
 
@@ -108,7 +113,8 @@ def _check_sshd(content: str) -> list[Finding]:
     return findings
 
 
-def _check_dockerfile(content: str) -> list[Finding]:
+def _check_dockerfile_regex(content: str) -> list[Finding]:
+    """Lightweight fallback when hadolint isn't installed."""
     findings: list[Finding] = []
     has_user = re.search(r"^\s*USER\s+(?!root\b)\S+", content, re.MULTILINE)
     if not has_user:
@@ -331,6 +337,88 @@ def _check_kubernetes(content: str) -> list[Finding]:
         return _run_checkov(content, suffix=".yaml")
     except _CheckovMissing:
         return [_checkov_missing_hint(), *_check_kubernetes_regex(content)]
+
+
+# ---- Hadolint integration (Dockerfile linting) -----------------------------
+
+_HADOLINT_SEVERITY_MAP = {
+    "error": "high",
+    "warning": "medium",
+    "info": "low",
+    "style": "info",
+}
+
+
+def _hadolint_finding(item: dict) -> Finding:
+    code = item.get("code", "?")
+    message = item.get("message", "?")
+    line = item.get("line", "?")
+    severity = _HADOLINT_SEVERITY_MAP.get((item.get("level") or "warning").lower(), "medium")
+    # SCxxxx are ShellCheck rules on RUN lines; DLxxxx are hadolint's own.
+    wiki = f"https://github.com/hadolint/hadolint/wiki/{code}"
+
+    return Finding(
+        title=f"[{code}] {message}",
+        severity=severity,  # type: ignore[arg-type]
+        framework="NIST SP 800-53 Rev. 5",
+        control_id="CM-6",  # Configuration Settings — enables cross-framework mapping
+        evidence=f"Dockerfile line {line}: {message}",
+        recommendation=f"See hadolint rule guidance: {wiki}",
+    )
+
+
+def _run_hadolint(content: str) -> list[Finding]:
+    """Write content to a temp Dockerfile and run `hadolint`. Raises _HadolintMissing if absent."""
+    with tempfile.NamedTemporaryFile(
+        suffix=".Dockerfile", mode="w", encoding="utf-8", delete=False
+    ) as tf:
+        tf.write(content)
+        tmp_path = tf.name
+
+    try:
+        try:
+            proc = subprocess.run(
+                ["hadolint", "--format", "json", "--no-fail", tmp_path],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except FileNotFoundError as e:
+            raise _HadolintMissing() from e
+
+        if not proc.stdout.strip():
+            return []
+
+        try:
+            data = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            return []
+
+        return [_hadolint_finding(item) for item in data if isinstance(item, dict)]
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+def _hadolint_missing_hint() -> Finding:
+    return Finding(
+        title="hadolint not installed — Dockerfile scan falling back to regex heuristics",
+        severity="info",
+        evidence="`hadolint` binary is not on PATH; using lightweight regex checks instead.",
+        recommendation=(
+            "Install hadolint for full Dockerfile linting: `brew install hadolint` (macOS) "
+            "or download from https://github.com/hadolint/hadolint/releases"
+        ),
+    )
+
+
+def _check_dockerfile(content: str) -> list[Finding]:
+    try:
+        return _run_hadolint(content)
+    except _HadolintMissing:
+        return [_hadolint_missing_hint(), *_check_dockerfile_regex(content)]
 
 
 _CHECKS: dict[str, Callable[[str], list[Finding]]] = {

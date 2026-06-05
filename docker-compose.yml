@@ -9,8 +9,16 @@ services:
     volumes:
       - chromadb:/app/.chromadb          # framework embeddings
       - auditor_cache:/root/.cache/auditor  # KEV / EPSS / ATT&CK STIX / audit history
+      - semgrep_cache:/root/.semgrep     # Semgrep `--config auto` rule cache (avoids re-download)
+      # Mirror the host home directory into the container at the SAME path,
+      # read-only. Any local path under it (e.g. /Users/you/code/repo) then works
+      # verbatim in the UI's "Codebase path" field — no translation needed.
+      # Narrow this to a specific dir if you don't want the container to read all
+      # of $HOME, e.g.  - ${HOME}/code:${HOME}/code:ro
+      - ${HOME}:${HOME}:ro
     restart: unless-stopped
 
 volumes:
   chromadb:
   auditor_cache:
+  semgrep_cache:

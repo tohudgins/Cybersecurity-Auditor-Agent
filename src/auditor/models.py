@@ -59,6 +59,13 @@ class Finding(BaseModel):
             "{'NIST CSF 2.1': ['PR.AA-05'], 'CIS Controls v8.1': ['5.4']}."
         ),
     )
+    risk_score: float | None = Field(
+        default=None,
+        description=(
+            "Normalized 0-100 prioritization score blending severity, CVSS, EPSS, and CISA KEV. "
+            "Populated by enrichment.risk.normalize_findings; used to rank the report."
+        ),
+    )
 
 
 class Artifact(BaseModel):

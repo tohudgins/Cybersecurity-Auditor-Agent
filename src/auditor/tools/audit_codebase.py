@@ -1,12 +1,14 @@
-"""Audit a codebase via Trivy (CVEs in deps) + Bandit (Python SAST) + secrets scan.
+"""Audit a codebase via Trivy + Semgrep + Bandit + secrets scan.
 
-Three scanners, all invoked via subprocess or regex fallback:
-- Trivy   — CVEs in dependency manifests (always runs)
+Four scanners, all invoked via subprocess or regex fallback:
+- Trivy   — CVEs in dependency manifests + IaC/Dockerfile/Helm misconfigurations (always runs)
+- Semgrep — multi-language SAST (always runs; covers JS/TS, Go, Java, Ruby, ...)
 - Bandit  — Python SAST (only when *.py files are present)
 - Secrets — gitleaks if installed, else regex patterns for common secret formats
 
 References:
 - Trivy:    https://aquasecurity.github.io/trivy/
+- Semgrep:  https://semgrep.dev/docs/
 - Bandit:   https://bandit.readthedocs.io/
 - gitleaks: https://github.com/gitleaks/gitleaks
 """
@@ -32,6 +34,11 @@ _TRIVY_INSTALL_HINT = (
 
 _BANDIT_INSTALL_HINT = "Bandit is not installed. Install: `pip install bandit`."
 
+_SEMGREP_INSTALL_HINT = (
+    "Semgrep is not installed. Install: `pip install semgrep` "
+    "or `brew install semgrep` (macOS)."
+)
+
 _TRIVY_SEVERITY_MAP = {
     "CRITICAL": "critical",
     "HIGH": "high",
@@ -47,8 +54,34 @@ _BANDIT_SEVERITY_MAP = {
     "UNDEFINED": "info",
 }
 
-_TRIVY_CMD_PREFIX = ["trivy", "fs", "--format", "json", "--quiet", "--severity", "HIGH,CRITICAL"]
+# Semgrep severities are ERROR / WARNING / INFO.
+_SEMGREP_SEVERITY_MAP = {
+    "ERROR": "high",
+    "WARNING": "medium",
+    "INFO": "low",
+}
+
+# `vuln` finds CVEs in dependency manifests; `misconfig` finds IaC / Dockerfile /
+# Helm / CloudFormation misconfigurations across the tree. (`secret` is left to
+# gitleaks.) One invocation loads the Trivy DB once and returns both in `Results`.
+_TRIVY_CMD_PREFIX = [
+    "trivy", "fs",
+    "--scanners", "vuln,misconfig",
+    "--format", "json",
+    "--quiet",
+    "--severity", "HIGH,CRITICAL",
+]
 _BANDIT_CMD_PREFIX = ["bandit", "-r", "-f", "json", "--severity-level", "medium"]
+# `--config auto` selects rulesets by detected language (fetched from the registry,
+# cached under ~/.semgrep). `--metrics off` keeps project metadata local.
+_SEMGREP_CMD_PREFIX = [
+    "semgrep", "scan",
+    "--config", "auto",
+    "--json",
+    "--quiet",
+    "--metrics", "off",
+    "--disable-version-check",
+]
 
 
 def _info(title: str, evidence: str, recommendation: str, source: str | None = None) -> Finding:
@@ -129,6 +162,28 @@ def _vuln_to_finding(vuln: dict, target: str, scanned_path: str) -> Finding:
     )
 
 
+def _misconfig_to_finding(mis: dict, target: str, scanned_path: str) -> Finding:
+    """Map one Trivy misconfiguration (IaC / Dockerfile / Helm / etc.) to a Finding."""
+    check_id = mis.get("AVDID") or mis.get("ID") or "?"
+    title = mis.get("Title") or check_id
+    severity = _TRIVY_SEVERITY_MAP.get((mis.get("Severity") or "UNKNOWN").upper(), "info")
+    message = mis.get("Message") or mis.get("Description") or "(no description)"
+    resolution = mis.get("Resolution") or mis.get("PrimaryURL") or "See the Trivy/AVD advisory."
+
+    start_line = (mis.get("CauseMetadata") or {}).get("StartLine")
+    location = f"{target}:{start_line}" if start_line else target
+
+    return Finding(
+        title=f"[{check_id}] {title}",
+        severity=severity,  # type: ignore[arg-type]
+        framework="NIST SP 800-53 Rev. 5",
+        control_id="CM-6",  # Configuration Settings — enables cross-framework mapping
+        evidence=f"{location} — {message}",
+        recommendation=resolution,
+        source_artifact=scanned_path,
+    )
+
+
 def _run_trivy(scanned_path: str) -> list[Finding]:
     cmd = [*_TRIVY_CMD_PREFIX, scanned_path]
 
@@ -166,6 +221,8 @@ def _run_trivy(scanned_path: str) -> list[Finding]:
         target = result.get("Target", "?")
         for vuln in result.get("Vulnerabilities") or []:
             findings.append(_vuln_to_finding(vuln, target, scanned_path))
+        for mis in result.get("Misconfigurations") or []:
+            findings.append(_misconfig_to_finding(mis, target, scanned_path))
     return findings
 
 
@@ -245,6 +302,90 @@ def _run_bandit(scanned_path: str) -> list[Finding]:
         ]
 
     return [_bandit_issue_to_finding(issue, scanned_path) for issue in data.get("results") or []]
+
+
+# ---- Semgrep ---------------------------------------------------------------
+
+
+def _semgrep_cwe(metadata: dict) -> str | None:
+    """Pull the first `CWE-<n>` token out of Semgrep's metadata.cwe field.
+
+    Semgrep reports CWEs as e.g. ``["CWE-89: Improper Neutralization ..."]`` or
+    occasionally a bare string. Return the canonical ``CWE-89`` token or None.
+    """
+    cwe = metadata.get("cwe")
+    first = cwe[0] if isinstance(cwe, list) and cwe else cwe if isinstance(cwe, str) else None
+    if not first:
+        return None
+    m = re.search(r"CWE-\d+", first)
+    return m.group(0) if m else None
+
+
+def _semgrep_result_to_finding(res: dict, scanned_path: str) -> Finding:
+    check_id = res.get("check_id", "?")
+    path = res.get("path", "?")
+    line = (res.get("start") or {}).get("line", "?")
+    extra = res.get("extra") or {}
+    message = (extra.get("message") or "").strip()
+    severity = _SEMGREP_SEVERITY_MAP.get((extra.get("severity") or "WARNING").upper(), "medium")
+    metadata = extra.get("metadata") or {}
+
+    # Last dotted segment is the human-readable rule name (full id is long & noisy).
+    short_rule = check_id.rsplit(".", 1)[-1]
+    code = (extra.get("lines") or "").strip()
+    evidence = f"{path}:{line} — {message}"
+    if code:
+        evidence += f"\n```\n{code}\n```"
+
+    references = metadata.get("references") or []
+    ref = references[0] if references else f"https://semgrep.dev/r/{check_id}"
+
+    return Finding(
+        title=f"[semgrep] {short_rule}",
+        severity=severity,  # type: ignore[arg-type]
+        framework="OWASP ASVS 5.0",
+        control_id=_semgrep_cwe(metadata) or check_id,
+        evidence=evidence,
+        recommendation=f"Review and remediate per the rule guidance: {ref}",
+        source_artifact=scanned_path,
+    )
+
+
+def _run_semgrep(scanned_path: str) -> list[Finding]:
+    cmd = [*_SEMGREP_CMD_PREFIX, scanned_path]
+
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    except FileNotFoundError:
+        return [_info("Semgrep not installed", _SEMGREP_INSTALL_HINT, _SEMGREP_INSTALL_HINT, scanned_path)]
+
+    # Semgrep exits 0 even when it reports findings; a non-zero exit with no
+    # parseable stdout is a real failure (bad rules, network fetch failed, etc.).
+    if proc.returncode != 0 and not proc.stdout.strip():
+        stderr_tail = (proc.stderr or "").strip().splitlines()[-5:]
+        return [
+            _info(
+                "Semgrep scan failed",
+                "\n".join(stderr_tail) or f"exit code {proc.returncode}",
+                "Re-run `semgrep scan --config auto <path>` manually to diagnose.",
+                scanned_path,
+            )
+        ]
+
+    try:
+        data = json.loads(proc.stdout or "{}")
+    except json.JSONDecodeError as e:
+        log.exception("Failed to parse Semgrep JSON")
+        return [
+            _info(
+                "Semgrep returned non-JSON output",
+                f"{type(e).__name__}: {e}",
+                "Re-run Semgrep manually; check version compatibility.",
+                scanned_path,
+            )
+        ]
+
+    return [_semgrep_result_to_finding(r, scanned_path) for r in data.get("results") or []]
 
 
 # ---- Secrets scanning ------------------------------------------------------
@@ -434,6 +575,8 @@ def audit_codebase(path: str | Path) -> list[Finding]:
         ]
 
     findings = _run_trivy(scanned_path)
+
+    findings.extend(_run_semgrep(scanned_path))
 
     if _has_python_files(Path(scanned_path)):
         findings.extend(_run_bandit(scanned_path))

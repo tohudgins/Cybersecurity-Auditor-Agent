@@ -12,7 +12,7 @@
 A local Streamlit app that puts a cybersecurity GRC analyst behind a chat box. Two modes:
 
 - **Compliance Q&A** — cited answers grounded in the indexed framework corpus (PDFs + GitHub markdown). Hybrid BM25 + vector retrieval routes exact control-ID queries (`AC-2`, `A01:2025`, `API1:2023`) directly to the matching control.
-- **System auditing** — upload a config, log, internal policy PDF, codebase path, or paste a free-text description. The agent runs regex heuristics, Trivy / Checkov / Bandit scanners, and LLM analysis, then returns a Markdown audit report ranked by severity and tied to specific framework controls.
+- **System auditing** — upload a config, log, internal policy PDF, codebase path, or paste a free-text description. The agent runs regex heuristics, industry scanners (Trivy, Semgrep, Bandit, gitleaks, Checkov, hadolint), and LLM analysis, then returns a Markdown audit report ranked by severity and tied to specific framework controls.
 
 ### Finding enrichment
 
@@ -142,9 +142,9 @@ To add a new framework: drop the PDF in `data/` (or add a `WebSource` in `ingest
 |---|---|---|
 | `text` | Pasted system / architecture description | `tools/audit_text.py` |
 | `policy_pdf` | Internal security policy PDF | `tools/audit_policy_pdf.py` |
-| `config` | `sshd_config`, `nginx.conf`, `Dockerfile`, `*.tf`, Kubernetes YAML | `tools/audit_config.py` |
-| `log` | `auth.log`, syslog, JSON event logs | `tools/audit_logs.py` |
-| `codebase` | Local directory path; Trivy scans CVEs in deps + Bandit for Python SAST + gitleaks for secrets (regex fallback if gitleaks isn't installed) | `tools/audit_codebase.py` |
+| `config` | `sshd_config`, `nginx.conf`, `Dockerfile` (hadolint), `*.tf` / Kubernetes YAML (Checkov) | `tools/audit_config.py` |
+| `log` | `auth.log`, syslog, access logs, JSON event logs — heuristics for brute force, post-brute-force compromise, web attacks (SQLi/XSS/traversal/cmd-injection), and log tampering | `tools/audit_logs.py` |
+| `codebase` | Local directory path; Trivy scans dependency CVEs + IaC/Dockerfile misconfigurations + Semgrep multi-language SAST + Bandit Python SAST + gitleaks secrets (regex fallback if gitleaks isn't installed) | `tools/audit_codebase.py` |
 
 ---
 
@@ -180,7 +180,7 @@ Open `http://localhost:8501`.
 
 ## Run with Docker
 
-Full feature set including Trivy / Checkov / Bandit:
+Full feature set including all bundled scanners (Trivy, Semgrep, Bandit, gitleaks, Checkov, hadolint):
 
 ```powershell
 # Windows PowerShell
@@ -193,14 +193,17 @@ export OPENAI_API_KEY=sk-...
 docker compose up --build
 ```
 
-First boot fetches markdown sources, embeds everything (~2-3 min, ~$0.20 of OpenAI credits), and pre-warms the MITRE ATT&CK STIX cache. Two named volumes are mounted:
+First boot fetches markdown sources, embeds everything (~2-3 min, ~$0.20 of OpenAI credits), and pre-warms the MITRE ATT&CK STIX cache. Named volumes are mounted:
 
 - `chromadb` → `/app/.chromadb` — framework embeddings
 - `auditor_cache` → `/root/.cache/auditor` — KEV / EPSS / ATT&CK STIX caches and the SQLite audit history
+- `semgrep_cache` → `/root/.semgrep` — Semgrep `--config auto` rule cache (avoids re-download on restart)
 
-Both persist across container restarts.
+All persist across container restarts.
 
-The image: `python:3.12-slim` + Trivy (from Aqua's Debian repo) + gitleaks (multi-arch binary) + Checkov/Bandit via pip. Entrypoint is `docker/entrypoint.sh`.
+**Scanning a local codebase:** the compose file mirrors your host `$HOME` into the container read-only at the same path (`${HOME}:${HOME}:ro`), so you can paste a real local path (e.g. `/Users/you/code/repo`) straight into the UI's *Codebase path* field. Narrow this mount to a single directory in `docker-compose.yml` if you don't want the container to see all of `$HOME`.
+
+The image: `python:3.12-slim` + Trivy (from Aqua's Debian repo) + gitleaks & hadolint (multi-arch release binaries) + Semgrep/Checkov/Bandit via pip. Entrypoint is `docker/entrypoint.sh`.
 
 Without docker-compose:
 ```bash
@@ -214,7 +217,7 @@ docker run -p 8501:8501 -e OPENAI_API_KEY=sk-... -v auditor-chromadb:/app/.chrom
 
 > Live URL will be added here after the first deploy.
 
-The hosted version runs **compliance Q&A** (with streaming output), **policy PDF audit**, **config / IaC audits via Checkov**, **Python SAST via Bandit**, **OSCAL export**, and **audit history**. Codebase CVE scanning (Trivy) and secrets scanning (gitleaks) are not available on Streamlit Cloud because system binaries can't be installed — the agent gracefully surfaces info findings for Trivy and falls back to regex patterns for secrets. For full functionality, use the local Docker setup.
+The hosted version runs **compliance Q&A** (with streaming output), **policy PDF audit**, **config / IaC audits via Checkov**, **Python SAST via Bandit / Semgrep** (pip-installable), **OSCAL export**, and **audit history**. Scanners that ship as system binaries — Trivy (CVEs + IaC misconfig), gitleaks (secrets), and hadolint (Dockerfile linting) — aren't available on Streamlit Cloud, so the agent gracefully surfaces info findings and falls back to regex heuristics. For full functionality, use the local Docker setup.
 
 ---
 
@@ -274,10 +277,12 @@ pytest tests/test_audit_config.py   # single file
 
 | Scanner | Audit kind | Install |
 |---|---|---|
-| **[Trivy](https://aquasecurity.github.io/trivy/)** | `codebase` (CVE scanning) | `scoop install trivy` / `brew install trivy` / [releases](https://github.com/aquasecurity/trivy/releases) |
-| **[Checkov](https://www.checkov.io/)** | `config` (Terraform / K8s IaC) | `pip install checkov` |
+| **[Trivy](https://aquasecurity.github.io/trivy/)** | `codebase` (dependency CVEs + IaC/Dockerfile misconfig) | `scoop install trivy` / `brew install trivy` / [releases](https://github.com/aquasecurity/trivy/releases) |
+| **[Semgrep](https://semgrep.dev/)** | `codebase` (multi-language SAST) | `pip install semgrep` / `brew install semgrep` |
 | **[Bandit](https://bandit.readthedocs.io/)** | `codebase` (Python SAST) | `pip install bandit` |
 | **[gitleaks](https://github.com/gitleaks/gitleaks)** | `codebase` (secrets) | `brew install gitleaks` / [releases](https://github.com/gitleaks/gitleaks/releases) — if missing, a built-in regex fallback covers AWS keys, OpenAI keys, GitHub tokens, hardcoded passwords, and embedded private keys. |
+| **[Checkov](https://www.checkov.io/)** | `config` (Terraform / K8s IaC) | `pip install checkov` |
+| **[hadolint](https://github.com/hadolint/hadolint)** | `config` (Dockerfile linting) | `brew install hadolint` / [releases](https://github.com/hadolint/hadolint/releases) — regex fallback if missing |
 
 If a scanner isn't on PATH, the corresponding tool emits an info-level finding with the install hint and falls back to either regex heuristics or a degraded mode — the demo still runs.
 

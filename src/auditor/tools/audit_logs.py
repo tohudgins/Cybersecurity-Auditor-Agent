@@ -12,8 +12,52 @@ from auditor.tools._findings_llm import run_findings_chain
 
 _FAILED_LOGIN = re.compile(r"Failed password for (?:invalid user )?(\S+) from (\S+)", re.IGNORECASE)
 _ROOT_LOGIN = re.compile(r"Accepted (?:password|publickey) for root from", re.IGNORECASE)
+_ACCEPTED_LOGIN = re.compile(
+    r"Accepted (?:password|publickey) for (\S+) from (\S+)", re.IGNORECASE
+)
 _SUDO = re.compile(r"sudo:\s+(\S+)\s*:.*COMMAND=(.+)$", re.IGNORECASE)
 _BRUTE_THRESHOLD = 5
+
+# Web-attack signatures commonly seen in access logs: (pattern, label, NIST control).
+_WEB_ATTACK_SIGNATURES: list[tuple[re.Pattern[str], str, str]] = [
+    (
+        re.compile(r"(?i)\bunion\b\s+\bselect\b|\bor\b\s+1\s*=\s*1\b|\bselect\b.+\bfrom\b.+--"),
+        "SQL injection attempt",
+        "SI-10",
+    ),
+    (
+        re.compile(r"(?i)<script\b|javascript:|onerror\s*=|onload\s*="),
+        "Cross-site scripting (XSS) attempt",
+        "SI-10",
+    ),
+    (
+        re.compile(r"(?:\.\./){2,}|\.\.%2[fF]|/etc/passwd\b|%2e%2e%2f"),
+        "Path-traversal / LFI attempt",
+        "AC-3",
+    ),
+    (
+        re.compile(r"(?i);\s*(?:cat|wget|curl|nc|bash|sh|chmod|rm)\b|\$\([^)]*\)"),
+        "OS command-injection attempt",
+        "SI-10",
+    ),
+]
+
+# Anti-forensics / log-tampering indicators.
+_LOG_TAMPER = re.compile(
+    r"(?i)audit(?:d)?\s+(?:log\s+)?(?:cleared|stopped|disabled)"
+    r"|\bhistory\s+-c\b"
+    r"|truncate[^\n]*(?:wtmp|btmp|auth\.log|secure)"
+    r"|\brm\b[^\n]*(?:auth\.log|/var/log/secure|/var/log/syslog|wtmp|btmp)"
+)
+
+
+def _line_containing(text: str, start: int) -> str:
+    """Return the (stripped) log line that contains the match at offset `start`."""
+    line_start = text.rfind("\n", 0, start) + 1
+    line_end = text.find("\n", start)
+    if line_end == -1:
+        line_end = len(text)
+    return text[line_start:line_end].strip()
 
 
 def _heuristic_log_findings(log_text: str) -> list[Finding]:
@@ -37,6 +81,63 @@ def _heuristic_log_findings(log_text: str) -> list[Finding]:
                     ),
                 )
             )
+
+    # Successful login from an IP that also brute-forced — likely account compromise.
+    for m in _ACCEPTED_LOGIN.finditer(log_text):
+        user, ip = m.group(1), m.group(2)
+        if failed_by_ip.get(ip, 0) >= _BRUTE_THRESHOLD:
+            findings.append(
+                Finding(
+                    title=f"Successful login from brute-forcing source {ip} (user {user})",
+                    severity="critical",
+                    framework="NIST SP 800-53 Rev. 5",
+                    control_id="AC-7",
+                    evidence=(
+                        f"`Accepted` login for `{user}` from {ip}, which also produced "
+                        f"{failed_by_ip[ip]} failed attempts — consistent with a successful brute force."
+                    ),
+                    recommendation=(
+                        "Treat the account as potentially compromised: force a credential reset, "
+                        "review session activity from this IP, and block the source pending investigation."
+                    ),
+                )
+            )
+
+    # Web-attack signatures (SQLi / XSS / traversal / command injection) — one finding per category.
+    for pattern, label, control in _WEB_ATTACK_SIGNATURES:
+        first = pattern.search(log_text)
+        if first:
+            hits = sum(1 for _ in pattern.finditer(log_text))
+            findings.append(
+                Finding(
+                    title=f"{label} detected in logs ({hits} occurrence{'s' if hits != 1 else ''})",
+                    severity="high",
+                    framework="NIST SP 800-53 Rev. 5",
+                    control_id=control,
+                    evidence=f"e.g. `{_line_containing(log_text, first.start())[:200]}`",
+                    recommendation=(
+                        "Validate and parameterize inputs, deploy a WAF rule for this pattern, and "
+                        "review whether any matching request succeeded (2xx) against sensitive endpoints."
+                    ),
+                )
+            )
+
+    # Anti-forensics: clearing or disabling audit logs.
+    tamper = _LOG_TAMPER.search(log_text)
+    if tamper:
+        findings.append(
+            Finding(
+                title="Possible log tampering / anti-forensics activity",
+                severity="high",
+                framework="NIST SP 800-53 Rev. 5",
+                control_id="AU-9",
+                evidence=f"`{_line_containing(log_text, tamper.start())[:200]}`",
+                recommendation=(
+                    "Protect audit logs from modification: ship them off-host to a write-once / "
+                    "tamper-resistant store and restrict who can stop auditing or delete log files."
+                ),
+            )
+        )
 
     if _ROOT_LOGIN.search(log_text):
         findings.append(

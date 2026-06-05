@@ -42,6 +42,7 @@ dev = [
 scanners = [
     "checkov>=3.0.0",
     "bandit>=1.7.0",
+    "semgrep>=1.0.0",
 ]
 
 [build-system]
