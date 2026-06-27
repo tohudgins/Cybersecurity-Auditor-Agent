@@ -112,6 +112,17 @@ def control_title(control_id: str) -> str | None:
     return entry.get("title") if entry else None
 
 
+def catalog_control_ids() -> list[str]:
+    """All NIST 800-53 anchor controls in the curated crosswalk (the default
+    assessment baseline). Sorted by family then number."""
+
+    def _key(cid: str) -> tuple[str, int]:
+        fam, _, num = cid.partition("-")
+        return (fam, int(num) if num.isdigit() else 0)
+
+    return sorted(_load_mappings().keys(), key=_key)
+
+
 def _merge(into: dict[str, list[str]], extra: dict[str, list[str]]) -> None:
     """Union framework→ids lists, preserving order and de-duplicating."""
     for fw, ids in extra.items():

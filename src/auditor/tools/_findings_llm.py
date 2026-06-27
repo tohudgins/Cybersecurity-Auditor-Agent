@@ -28,8 +28,12 @@ def run_findings_chain(
     chain = prompt | llm
     result: _FindingList = chain.invoke(inputs)
     findings = list(result.findings)
-    if source_artifact:
-        for f in findings:
-            if f.source_artifact is None:
-                f.source_artifact = source_artifact
+    for f in findings:
+        # These are AI-generated; mark them so the report can separate them from
+        # deterministic scanner/heuristic evidence and treat them as advisory.
+        f.detection_source = "llm"
+        if f.confidence is None:
+            f.confidence = "medium"
+        if source_artifact and f.source_artifact is None:
+            f.source_artifact = source_artifact
     return findings

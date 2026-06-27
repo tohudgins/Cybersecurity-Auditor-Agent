@@ -184,6 +184,7 @@ def audit_logs(
     heuristic = _heuristic_log_findings(log_text)
     for f in heuristic:
         f.source_artifact = source_artifact
+        f.detection_source = "heuristic"  # regex log signatures, deterministic
 
     probe = "audit logging account lockout failed login monitoring detection"
     docs = retrieve(probe, frameworks=frameworks, k=10)

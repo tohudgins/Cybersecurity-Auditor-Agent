@@ -1,8 +1,8 @@
 """Tests for OSCAL Assessment Results export."""
 from __future__ import annotations
 
-from auditor.models import Finding
-from auditor.oscal.exporter import to_oscal_assessment_results
+from auditor.models import ControlAssessment, CoverageSummary, Finding
+from auditor.oscal.exporter import to_oscal_assessment_results, to_oscal_poam
 
 
 def _make_finding(**overrides) -> Finding:
@@ -115,3 +115,63 @@ def test_mapped_controls_emit_props_with_class():
     assert ("NIST CSF 2.1", "PR.AA-05") in by_class
     assert ("CIS Controls v8.1", "5.4") in by_class
     assert ("CIS Controls v8.1", "6.8") in by_class
+
+
+# ── Coverage + reviewed-controls + POA&M (assessment layer) ───────────────────
+
+def _assessment(control_id="SI-2", status="not-satisfied", method="test"):
+    return ControlAssessment(control_id=control_id, status=status, method=method)
+
+
+def _coverage():
+    return CoverageSummary(
+        baseline="auditor-curated",
+        total_controls=40,
+        assessed=10,
+        satisfied=6,
+        not_satisfied=3,
+        partial=1,
+        not_assessed=30,
+    )
+
+
+def test_results_carry_coverage_props_and_reviewed_controls():
+    f = _make_finding(control_id="SI-2")
+    doc = to_oscal_assessment_results(
+        [f],
+        assessments=[_assessment("SI-2", "not-satisfied"), _assessment("RA-5", "satisfied")],
+        coverage=_coverage(),
+    )
+    result = doc["assessment-results"]["results"][0]
+    props = {p["name"]: p["value"] for p in result["props"]}
+    assert props["coverage-percent"] == "25.0"
+    assert props["controls-not-assessed"] == "30"
+
+    reviewed = result["reviewed-controls"]
+    included = {c["control-id"] for c in reviewed["control-selections"][0]["include-controls"]}
+    assert included == {"SI-2", "RA-5"}
+    status_props = {(p["class"], p["value"]) for p in reviewed["props"]}
+    assert ("SI-2", "not-satisfied") in status_props
+    assert ("RA-5", "satisfied") in status_props
+
+
+def test_backward_compatible_without_assessment_args():
+    doc = to_oscal_assessment_results([_make_finding()])
+    result = doc["assessment-results"]["results"][0]
+    assert "reviewed-controls" not in result
+    assert "props" not in result
+
+
+def test_poam_emits_item_per_open_finding():
+    findings = [
+        _make_finding(title="open high", severity="high", control_id="SI-2"),
+        _make_finding(title="info notice", severity="info"),
+    ]
+    doc = to_oscal_poam(findings)
+    poam = doc["plan-of-action-and-milestones"]
+    assert poam["metadata"]["oscal-version"] == "1.1.2"
+    items = poam["poam-items"]
+    assert len(items) == 1  # info notice excluded
+    assert items[0]["title"] == "open high"
+    prop_names = {p["name"] for p in items[0]["props"]}
+    assert "associated-control" in prop_names and "severity" in prop_names

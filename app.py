@@ -23,7 +23,7 @@ from auditor import history as audit_history  # noqa: E402
 from auditor.agents.graph import AUDITOR_GRAPH  # noqa: E402
 from auditor.ingest.pdf_loader import FRAMEWORK_NAMES  # noqa: E402
 from auditor.models import Artifact  # noqa: E402
-from auditor.oscal.exporter import to_oscal_assessment_results  # noqa: E402
+from auditor.oscal.exporter import to_oscal_assessment_results, to_oscal_poam  # noqa: E402
 from auditor.retrieval.retriever import warm_cache  # noqa: E402
 from auditor.tools.audit_policy_pdf import extract_pdf_text  # noqa: E402
 from auditor.tools.compliance_qa import stream_compliance_answer  # noqa: E402
@@ -971,6 +971,8 @@ if prompt:
             }
             final_report: str | None = None
             findings = []
+            assessments = []
+            coverage = None
 
             with st.status("⚙️ Running audit pipeline…", expanded=True) as status:
                 try:
@@ -983,6 +985,10 @@ if prompt:
                                     final_report = state_update["final_report"]
                                 if state_update.get("findings"):
                                     findings = state_update["findings"]
+                                if state_update.get("assessments"):
+                                    assessments = state_update["assessments"]
+                                if state_update.get("coverage"):
+                                    coverage = state_update["coverage"]
                     status.update(label="✅ Audit complete", state="complete")
                 except Exception as exc:
                     status.update(label="❌ Audit error", state="error")
@@ -993,16 +999,29 @@ if prompt:
             st.session_state.messages.append(AIMessage(content=answer))
 
             if findings:
-                oscal_doc = to_oscal_assessment_results(findings)
-                oscal_str = json.dumps(oscal_doc, indent=2)
-                timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-                st.download_button(
-                    label="⬇ Export OSCAL Assessment Results",
-                    data=oscal_str,
-                    file_name=f"oscal-assessment-results-{timestamp}.json",
-                    mime="application/json",
-                    help="NIST OSCAL 1.1.2 Assessment Results JSON. Ingestible by FedRAMP / Trestle / RegScale.",
+                oscal_doc = to_oscal_assessment_results(
+                    findings, assessments=assessments or None, coverage=coverage
                 )
+                oscal_str = json.dumps(oscal_doc, indent=2)
+                poam_str = json.dumps(to_oscal_poam(findings), indent=2)
+                timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+                col_ar, col_poam = st.columns(2)
+                with col_ar:
+                    st.download_button(
+                        label="⬇ Export OSCAL Assessment Results",
+                        data=oscal_str,
+                        file_name=f"oscal-assessment-results-{timestamp}.json",
+                        mime="application/json",
+                        help="NIST OSCAL 1.1.2 Assessment Results JSON. Ingestible by FedRAMP / Trestle / RegScale.",
+                    )
+                with col_poam:
+                    st.download_button(
+                        label="⬇ Export OSCAL POA&M",
+                        data=poam_str,
+                        file_name=f"oscal-poam-{timestamp}.json",
+                        mime="application/json",
+                        help="NIST OSCAL 1.1.2 Plan of Action & Milestones — open findings as remediation items.",
+                    )
 
                 # Persist the run to history
                 sev_counts = dict(Counter(f.severity for f in findings))

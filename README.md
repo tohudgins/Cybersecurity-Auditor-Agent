@@ -12,7 +12,9 @@
 A local Streamlit app that puts a cybersecurity GRC analyst behind a chat box. Two modes:
 
 - **Compliance Q&A** — cited answers grounded in the indexed framework corpus (PDFs + GitHub markdown). Hybrid BM25 + vector retrieval routes exact control-ID queries (`AC-2`, `A01:2025`, `API1:2023`) directly to the matching control.
-- **System auditing** — upload a config, log, internal policy PDF, codebase path, or paste a free-text description. The agent runs regex heuristics, industry scanners (Trivy, Semgrep, Bandit, gitleaks, Checkov, hadolint), and LLM analysis, then returns a Markdown audit report ranked by severity and tied to specific framework controls.
+- **System auditing** — upload a config, log, internal policy PDF, codebase path, or paste a free-text description. The agent runs regex heuristics, industry scanners (Trivy, Semgrep, Bandit, gitleaks, Checkov, hadolint), and LLM analysis, then returns a Markdown audit report that leads with a **control-coverage assessment** (per-control Satisfied / Not Satisfied / Not Assessed with the assessment method) — not just a findings list — ranked by risk and tied to specific framework controls.
+
+Unlike a bare scanner, it assesses controls the way an assessor does: it reports what passed, what failed, and — honestly — what went **unassessed** because no artifact exercised it, with a coverage percentage. Findings are separated into **deterministic** (scanner/heuristic) vs **AI-assisted** evidence, and results export as both OSCAL Assessment Results and an OSCAL POA&M.
 
 ### Finding enrichment
 
@@ -25,7 +27,8 @@ Every finding is enriched with industry-standard context before rendering:
 | **CVSS v3** | NVD via Trivy | Numeric base score + vector + qualitative severity (e.g., `9.8 (Critical)`) |
 | **MITRE ATT&CK** | Curated keyword map + full ATT&CK Enterprise STIX bundle from [mitre/cti](https://github.com/mitre/cti) (7-day cache) | Tags findings with technique IDs (e.g., brute-force log → `T1110.001`). Two layers: hand-curated high-precision rules, plus multi-word phrase matching across all ~600 ATT&CK techniques. |
 | **Cross-framework mappings** | Curated crosswalk + NIST OLIR/CPRT importer | **Bidirectional** resolution across NIST 800-53, CSF 2.1, CIS v8.1, ISO 27001:2022, PCI DSS v4.0.1, SOC 2 TSC ([`data/mappings/control_mappings.json`](data/mappings/control_mappings.json)). A finding anchored on *any* of those frameworks resolves to all the others. SAST findings (Semgrep/Bandit) cross a **CWE → OWASP ASVS 5.0 → NIST** bridge ([`cwe_mappings.json`](data/mappings/cwe_mappings.json)) so a `CWE-89` SQLi finding inherits the full control crosswalk. |
-| **OSCAL export** | NIST [OSCAL 1.1.2](https://pages.nist.gov/OSCAL/reference/latest/assessment-results/) | Every audit run downloadable as Assessment Results JSON (FedRAMP / Trestle / RegScale-ingestible). All enrichment fields above surface as OSCAL `props`. |
+| **Control assessment** | SP 800-53A model | Per-control verdict (Satisfied / Not Satisfied / Partial / Not Assessed) + method (Examine / Test) + a coverage % over the selected baseline. Converts findings into an assessment. |
+| **OSCAL export** | NIST [OSCAL 1.1.2](https://pages.nist.gov/OSCAL/reference/latest/assessment-results/) | Every run downloadable as **Assessment Results** JSON (with `reviewed-controls` + coverage props) and an **OSCAL POA&M** (open findings as remediation items) — FedRAMP / Trestle / RegScale-ingestible. All enrichment fields surface as OSCAL `props`. |
 | **Audit history** | Local SQLite at `~/.cache/auditor/history.db` | Every completed run is persisted with its report + OSCAL JSON. Sidebar shows the 3 most recent; "View all" opens a paged browser with per-row delete and confirmed bulk clear. |
 
 ---

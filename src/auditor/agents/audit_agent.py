@@ -5,10 +5,11 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 
 from auditor.agents.state import AuditorState
+from auditor.assessment import assess_controls
 from auditor.enrichment.mappings import enrich_with_mappings
 from auditor.enrichment.mitre import enrich_findings
 from auditor.enrichment.risk import normalize_findings
-from auditor.models import Artifact, Finding
+from auditor.models import Artifact, AuditScope, Finding
 from auditor.tools.audit_codebase import audit_codebase
 from auditor.tools.audit_config import audit_config
 from auditor.tools.audit_logs import audit_logs
@@ -67,6 +68,14 @@ def audit_node(state: AuditorState) -> dict:
 
     enrich_findings(all_findings)
     enrich_with_mappings(all_findings)
-    # Normalize last: de-duplicate across scanners, score, and rank by risk.
+    # Normalize: de-duplicate across scanners, score, and rank by risk.
     normalized = normalize_findings(all_findings)
-    return {"findings": normalized}
+
+    # Assess controls: turn findings into per-control verdicts + coverage so the
+    # report reads like an audit (what passed / failed / went unassessed), not a
+    # bare findings list.
+    scope = state.get("scope") or AuditScope()
+    kinds = [a.kind for a in artifacts]
+    assessments, coverage = assess_controls(normalized, kinds, scope)
+
+    return {"findings": normalized, "assessments": assessments, "coverage": coverage}

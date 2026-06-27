@@ -8,6 +8,24 @@ from pydantic import BaseModel, Field
 Severity = Literal["info", "low", "medium", "high", "critical"]
 ArtifactKind = Literal["text", "policy_pdf", "config", "log", "codebase"]
 
+# Where a finding came from. The scanner/heuristic sources are deterministic and
+# reproducible; the llm source is AI-assisted analysis and should be presented as
+# advisory. `is_deterministic_source()` is the split the report uses.
+DetectionSource = Literal["scanner", "heuristic", "llm", "manual"]
+Confidence = Literal["high", "medium", "low"]
+
+# Assessment vocabulary modelled on NIST SP 800-53A. A control assessment renders
+# one of these states per in-scope control, with the method used to reach it.
+ControlStatus = Literal[
+    "satisfied", "not-satisfied", "partial", "not-applicable", "not-assessed"
+]
+AssessmentMethod = Literal["examine", "test", "interview"]
+
+
+def is_deterministic_source(source: str | None) -> bool:
+    """True for scanner/heuristic/manual evidence; False for LLM-generated."""
+    return source in ("scanner", "heuristic", "manual")
+
 
 class Finding(BaseModel):
     """A single audit observation produced by an audit tool."""
@@ -66,6 +84,77 @@ class Finding(BaseModel):
             "Populated by enrichment.risk.normalize_findings; used to rank the report."
         ),
     )
+    detection_source: DetectionSource = Field(
+        default="scanner",
+        description=(
+            "Origin of the finding: 'scanner' (external tool), 'heuristic' (built-in "
+            "rule), 'llm' (AI-assisted analysis), or 'manual'. Drives the report's "
+            "deterministic-vs-AI separation and assessment reproducibility."
+        ),
+    )
+    confidence: Confidence | None = Field(
+        default=None,
+        description="Optional confidence in the finding (high/medium/low). LLM findings default to medium.",
+    )
+
+
+class ControlAssessment(BaseModel):
+    """A verdict on a single in-scope control, modelled on NIST SP 800-53A.
+
+    Real audits assess each control in the selected baseline — not just surface
+    problems. A control with findings is 'not-satisfied' (or 'partial'); a control
+    a scanner exercised cleanly is 'satisfied'; a control nothing covered is
+    'not-assessed'. The honest denominator is what makes a report an audit.
+    """
+
+    control_id: str = Field(..., description="Anchor control ID, e.g. 'AC-3'.")
+    title: str | None = Field(default=None, description="Human-readable control title.")
+    framework: str = Field(default="NIST SP 800-53 Rev. 5", description="Framework the control belongs to.")
+    status: ControlStatus = "not-assessed"
+    method: AssessmentMethod | None = Field(
+        default=None,
+        description="How the verdict was reached: examine (config inspection), test (scanner run), interview.",
+    )
+    rationale: str = Field(default="", description="Why this status — coverage + finding summary.")
+    related_findings: list[str] = Field(
+        default_factory=list,
+        description="Titles of findings that drove a not-satisfied/partial verdict.",
+    )
+
+
+class AuditScope(BaseModel):
+    """The engagement scope that drives coverage and risk context."""
+
+    system_name: str = Field(default="Target system", description="Name/label of the system under assessment.")
+    baseline: str = Field(
+        default="auditor-curated",
+        description="Control baseline selected for the engagement (e.g. 'auditor-curated', 'moderate').",
+    )
+    data_classification: str | None = Field(
+        default=None,
+        description="Highest data sensitivity handled (e.g. 'PII', 'PHI', 'public'). Modulates impact.",
+    )
+    internet_facing: bool | None = Field(
+        default=None,
+        description="Whether the system is internet-facing. Raises likelihood for exposure-related controls.",
+    )
+
+
+class CoverageSummary(BaseModel):
+    """Roll-up of a control assessment: the headline coverage numbers."""
+
+    baseline: str
+    total_controls: int
+    assessed: int
+    satisfied: int = 0
+    not_satisfied: int = 0
+    partial: int = 0
+    not_applicable: int = 0
+    not_assessed: int = 0
+
+    @property
+    def coverage_pct(self) -> float:
+        return round(100.0 * self.assessed / self.total_controls, 1) if self.total_controls else 0.0
 
 
 class Artifact(BaseModel):

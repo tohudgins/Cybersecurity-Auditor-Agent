@@ -10,7 +10,12 @@ from langchain_openai import ChatOpenAI
 from auditor.agents.state import AuditorState
 from auditor.config import settings
 from auditor.enrichment.risk import compute_risk_score
-from auditor.models import Finding
+from auditor.models import (
+    ControlAssessment,
+    CoverageSummary,
+    Finding,
+    is_deterministic_source,
+)
 from auditor.prompts.reporting import EXECUTIVE_SUMMARY_PROMPT
 
 _SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
@@ -61,6 +66,9 @@ def _render_finding(idx: int, f: Finding) -> str:
         )
         mappings_line = f"- **Cross-framework:** {rendered}\n"
     source_line = f"- **Source artifact:** `{f.source_artifact}`\n" if f.source_artifact else ""
+    det = "deterministic" if is_deterministic_source(f.detection_source) else "AI-assisted"
+    conf = f", {f.confidence} confidence" if f.confidence else ""
+    detection_line = f"- **Detection:** {f.detection_source} ({det}{conf})\n"
     return (
         f"### {idx}. {badge} {f.title}\n"
         f"{risk_line}"
@@ -69,9 +77,65 @@ def _render_finding(idx: int, f: Finding) -> str:
         f"{epss_line}"
         f"{attack_line}"
         f"{mappings_line}"
+        f"{detection_line}"
         f"{source_line}"
         f"- **Evidence:** {f.evidence}\n"
         f"- **Recommendation:** {f.recommendation}\n"
+    )
+
+
+_STATUS_LABEL = {
+    "satisfied": "Satisfied",
+    "not-satisfied": "Not Satisfied",
+    "partial": "Partial",
+    "not-applicable": "Not Applicable",
+    "not-assessed": "Not Assessed",
+}
+
+
+def _render_coverage(coverage: CoverageSummary) -> str:
+    """Headline control-coverage table — the part that makes this an audit."""
+    rows = [
+        ("Satisfied", coverage.satisfied),
+        ("Not Satisfied", coverage.not_satisfied),
+        ("Partial", coverage.partial),
+        ("Not Applicable", coverage.not_applicable),
+        ("Not Assessed", coverage.not_assessed),
+    ]
+    body = "\n".join(f"| {label} | {count} |" for label, count in rows)
+    return (
+        "## Control Coverage\n\n"
+        f"**Baseline:** {coverage.baseline} — "
+        f"**{coverage.assessed} of {coverage.total_controls} controls assessed "
+        f"({coverage.coverage_pct:.0f}%)**\n\n"
+        "| Status | Controls |\n|---|---|\n"
+        f"{body}\n\n"
+        "_\"Satisfied\" means the automated checks that exercise a control surfaced "
+        "no findings for the aspect tested — not a full control attestation. "
+        "\"Not Assessed\" controls had no in-scope artifact exercising them; supply "
+        "additional artifacts (config, logs, codebase, policy) to broaden coverage._\n"
+    )
+
+
+def _render_assessment_detail(assessments: list[ControlAssessment]) -> str:
+    """Per-control verdict table for controls that were actually assessed."""
+    assessed = [a for a in assessments if a.status != "not-assessed"]
+    if not assessed:
+        return ""
+    order = {"not-satisfied": 0, "partial": 1, "satisfied": 2, "not-applicable": 3}
+    assessed.sort(key=lambda a: (order.get(a.status, 9), a.control_id))
+    rows = []
+    for a in assessed:
+        title = a.title or ""
+        method = a.method or "—"
+        rows.append(
+            f"| {a.control_id} | {title} | {_STATUS_LABEL.get(a.status, a.status)} | {method} |"
+        )
+    return (
+        "## Control Assessment\n\n"
+        "| Control | Title | Status | Method |\n|---|---|---|---|\n"
+        + "\n".join(rows)
+        + "\n"
     )
 
 
@@ -110,7 +174,12 @@ def _executive_summary(findings: list[Finding], frameworks: list[str] | None) ->
     )
 
 
-def _build_report(findings: list[Finding], frameworks: list[str] | None) -> str:
+def _build_report(
+    findings: list[Finding],
+    frameworks: list[str] | None,
+    assessments: list[ControlAssessment] | None = None,
+    coverage: CoverageSummary | None = None,
+) -> str:
     sorted_findings = sorted(
         findings,
         key=lambda f: (
@@ -127,16 +196,29 @@ def _build_report(findings: list[Finding], frameworks: list[str] | None) -> str:
         f"{sev_counts[s]} {s}" for s in ("critical", "high", "medium", "low", "info") if sev_counts.get(s)
     ) or "no findings"
 
+    deterministic = sum(1 for f in sorted_findings if is_deterministic_source(f.detection_source))
+    ai_assisted = len(sorted_findings) - deterministic
+    provenance_line = (
+        f"**Evidence basis:** {deterministic} deterministic (scanner/heuristic), "
+        f"{ai_assisted} AI-assisted\n"
+    )
+
     summary = _executive_summary(sorted_findings, frameworks)
 
     findings_md = "\n".join(_render_finding(i + 1, f) for i, f in enumerate(sorted_findings)) or "_No findings._"
 
+    coverage_md = _render_coverage(coverage) + "\n" if coverage else ""
+    assessment_md = _render_assessment_detail(assessments) + "\n" if assessments else ""
+
     return (
         "# Cybersecurity Audit Report\n\n"
         f"**Target frameworks:** {', '.join(frameworks) if frameworks else 'all configured'}\n"
-        f"**Findings count:** {counts_line}\n\n"
+        f"**Findings count:** {counts_line}\n"
+        f"{provenance_line}\n"
         "## Executive Summary\n\n"
         f"{summary}\n\n"
+        f"{coverage_md}"
+        f"{assessment_md}"
         "## Findings\n\n"
         f"{findings_md}"
     )
@@ -149,7 +231,9 @@ def reporting_node(state: AuditorState) -> dict:
 
     findings = state.get("findings") or []
     frameworks = state.get("target_frameworks") or None
-    report = _build_report(findings, frameworks)
+    assessments = state.get("assessments") or None
+    coverage = state.get("coverage") or None
+    report = _build_report(findings, frameworks, assessments, coverage)
     return {
         "final_report": report,
         "messages": [AIMessage(content=report)],
