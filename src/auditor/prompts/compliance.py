@@ -16,6 +16,24 @@ COMPLIANCE_QA_PROMPT = PromptTemplate(
 )
 
 
+FOLLOWUP_QA_PROMPT = PromptTemplate(
+    input_variables=["report", "context", "question"],
+    template=(
+        "You are a cybersecurity auditor assistant helping the user understand and act on a "
+        "security audit report you just produced. Answer the user's follow-up question using the "
+        "AUDIT REPORT below as the primary source, supported by the FRAMEWORK EXCERPTS for control "
+        "and remediation guidance. When you reference a control, cite the framework/page from the "
+        "excerpts using the [Framework, p.N] format. Be specific and practical — point to the "
+        "relevant findings, controls, and concrete remediation steps. If the report does not cover "
+        "what is asked, say so.\n\n"
+        "AUDIT REPORT:\n{report}\n\n"
+        "FRAMEWORK EXCERPTS:\n{context}\n\n"
+        "Follow-up question: {question}\n\n"
+        "Answer:"
+    ),
+)
+
+
 FRAMEWORK_SUMMARY_MAP_PROMPT = PromptTemplate(
     input_variables=["text"],
     template=(

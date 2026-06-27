@@ -9,10 +9,10 @@
 <!-- After Streamlit Cloud deploy, replace YOUR-APP-URL with the real URL: -->
 <!-- [![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://YOUR-APP-URL.streamlit.app) -->
 
-A local Streamlit app that puts a cybersecurity GRC analyst behind a chat box. Two modes:
+A local Streamlit app that puts a cybersecurity GRC analyst behind a chat box. You **talk to it** — ask a compliance question, tell it what to audit, then dig into the results. Two modes:
 
 - **Compliance Q&A** — cited answers grounded in the indexed framework corpus (PDFs + GitHub markdown). Hybrid BM25 + vector retrieval routes exact control-ID queries (`AC-2`, `A01:2025`, `API1:2023`) directly to the matching control.
-- **System auditing** — upload a config, log, internal policy PDF, codebase path, or paste a free-text description. The agent runs regex heuristics, industry scanners (Trivy, Semgrep, Bandit, gitleaks, Checkov, hadolint), and LLM analysis, then returns a Markdown audit report that leads with a **control-coverage assessment** (per-control Satisfied / Not Satisfied / Not Assessed with the assessment method) — not just a findings list — ranked by risk and tied to specific framework controls.
+- **System auditing** — just say what to scan: `audit ~/myrepo`, `scan https://example.com`, `audit aws:prod`, `image:nginx:1.21`, `audit this machine` (or attach files / use the sidebar). The agent detects the target, runs the right tools (regex heuristics + Trivy, Semgrep, Bandit, gitleaks, Checkov, hadolint, Prowler, Nuclei, Lynis) and LLM analysis, then returns a report that leads with a **control-coverage assessment** (per-control Satisfied / Not Satisfied / Not Assessed with the assessment method) — not just a findings list — ranked by risk and tied to framework controls. Afterward you can **ask follow-ups in plain language** ("explain finding 3", "how do I fix the SQL injection?", "which controls failed?"), answered against the report and the framework corpus.
 
 Unlike a bare scanner, it assesses controls the way an assessor does: it reports what passed, what failed, and — honestly — what went **unassessed** because no artifact exercised it, with a coverage percentage. Findings are separated into **deterministic** (scanner/heuristic) vs **AI-assisted** evidence, and results export as both OSCAL Assessment Results and an OSCAL POA&M.
 
@@ -175,6 +175,9 @@ The importer is orientation-agnostic (detects the 800-53 side by ID shape) and o
 | `cloud_account` | **Live cloud posture (CSPM).** A provider spec (`aws`, `aws:profile`, `gcp`, `azure`); runs Prowler against the account using your local read-only SDK credentials and maps FAIL findings to NIST controls | `tools/audit_cloud.py` |
 | `image_ref` | **Container image.** An image reference (`nginx:1.21`); `trivy image` for CVEs + misconfigurations, with the same KEV/EPSS/CVSS enrichment as a codebase scan | `tools/audit_codebase.py` |
 | `target_url` | **Live web target (DAST).** A URL; runs a Nuclei templated scan and maps results to NIST controls by tag. Only scan targets you are authorized to test | `tools/audit_web.py` |
+| `host` | **Machine / OS hardening.** `localhost` or `user@server`; runs a Lynis audit (local, or remote over SSH) and maps each warning/suggestion to a NIST control by test category | `tools/audit_host.py` |
+
+Targets can be supplied through the sidebar **or stated in chat** — `auditor.intake.parse_targets()` detects paths, URLs, cloud accounts, images, and hosts from a message (with explicit `path:`/`url:`/`image:`/`cloud:`/`host:` prefixes always honored).
 
 ---
 
@@ -315,6 +318,7 @@ pytest tests/test_audit_config.py   # single file
 | **[hadolint](https://github.com/hadolint/hadolint)** | `config` (Dockerfile linting) | `brew install hadolint` / [releases](https://github.com/hadolint/hadolint/releases) — regex fallback if missing |
 | **[Prowler](https://github.com/prowler-cloud/prowler)** | `cloud_account` (live CSPM: AWS / GCP / Azure) | `pip install prowler` — uses your read-only cloud SDK credentials |
 | **[Nuclei](https://github.com/projectdiscovery/nuclei)** | `target_url` (live web DAST) | `brew install nuclei` / [releases](https://github.com/projectdiscovery/nuclei/releases) |
+| **[Lynis](https://github.com/CISOfy/lynis)** | `host` (OS hardening, local or remote-over-SSH) | `brew install lynis` / `apt install lynis` — for remote audits, Lynis must be on the target host |
 
 If a scanner isn't on PATH, the corresponding tool emits an info-level finding with the install hint and falls back to either regex heuristics or a degraded mode — the demo still runs.
 
@@ -327,7 +331,8 @@ Stated plainly, because a GRC tool that overstates its rigor is worse than one t
 - **Mappings are informative, not authoritative.** The crosswalk is curated from the public OLIR/CIS/ISO/PCI/SOC 2 references and covers the control families this agent exercises (~40 anchor controls, ~35 CWEs) — not the full ~1,000-control 800-53 catalog. The OLIR importer can augment it from NIST's machine-readable exports, but a compliance decision should still be confirmed against the official source. ASVS references are at chapter/domain granularity so they survive ASVS minor revisions.
 - **LLM findings are assistive, not a substitute for a human assessor.** The deterministic scanners (Trivy, Semgrep, Bandit, gitleaks, Checkov, hadolint) and regex heuristics are the evidentiary backbone; the LLM layer adds narrative analysis and can produce false positives/negatives. Findings are meant to be triaged, not auto-accepted.
 - **Point-in-time, on-demand.** The agent assesses what you point it at — uploaded artifacts *or* live targets (cloud account, container image, web URL) — at the moment you run it. It doesn't do continuous control monitoring, evidence collection, or ticketing; the OSCAL export exists so results can feed a system that does.
-- **Live scanning needs the prerequisites and your authorization.** Cloud posture (Prowler) requires read-only credentials in your local SDK config; web DAST (Nuclei) must only be pointed at systems you are permitted to test. Missing scanners degrade gracefully to an info finding rather than failing the run.
+- **Live scanning needs the prerequisites and your authorization.** Cloud posture (Prowler) requires read-only credentials in your local SDK config; web DAST (Nuclei) must only be pointed at systems you are permitted to test; remote host audits (Lynis) need SSH access and Lynis installed on the target. Missing scanners degrade gracefully to an info finding rather than failing the run.
+- **Chat target detection is heuristic.** Plain-language targeting (`audit aws:prod`) is best-effort and gated on an audit verb to avoid hijacking compliance questions; the explicit `path:`/`url:`/`image:`/`cloud:`/`host:` prefixes are the deterministic path.
 - **Single-user, local-first.** Audit history is a local SQLite DB — no multi-tenant RBAC or shareable report links yet.
 
 ## Roadmap

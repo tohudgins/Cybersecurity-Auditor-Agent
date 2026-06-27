@@ -13,6 +13,7 @@ ArtifactKind = Literal[
     "cloud_account",  # cloud posture (Prowler) — content = "aws[:profile]" etc.
     "image_ref",      # container image (Trivy image) — content = image reference
     "target_url",     # web target (Nuclei DAST) — content = URL
+    "host",           # machine/OS hardening (Lynis) — content = "localhost" or "user@host"
 ]
 
 # Where a finding came from. The scanner/heuristic sources are deterministic and

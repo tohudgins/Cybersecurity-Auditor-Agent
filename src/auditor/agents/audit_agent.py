@@ -13,6 +13,7 @@ from auditor.models import Artifact, AuditScope, Finding
 from auditor.tools.audit_cloud import audit_cloud
 from auditor.tools.audit_codebase import audit_codebase, audit_image
 from auditor.tools.audit_config import audit_config
+from auditor.tools.audit_host import audit_host
 from auditor.tools.audit_logs import audit_logs
 from auditor.tools.audit_policy_pdf import audit_policy_text
 from auditor.tools.audit_text import audit_system_description
@@ -38,6 +39,8 @@ def _audit_one(artifact: Artifact, frameworks: list[str] | None) -> list[Finding
         return audit_image(artifact.content)  # content holds the image reference
     if artifact.kind == "target_url":
         return audit_web(artifact.content)  # content holds the URL
+    if artifact.kind == "host":
+        return audit_host(artifact.content)  # content holds "localhost" or "user@host"
     log.warning("Unknown artifact kind: %s", artifact.kind)
     return []
 

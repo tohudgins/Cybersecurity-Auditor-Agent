@@ -22,11 +22,15 @@ from langchain_core.messages import AIMessage, HumanMessage  # noqa: E402
 from auditor import history as audit_history  # noqa: E402
 from auditor.agents.graph import AUDITOR_GRAPH  # noqa: E402
 from auditor.ingest.pdf_loader import FRAMEWORK_NAMES  # noqa: E402
+from auditor.intake import parse_targets  # noqa: E402
 from auditor.models import Artifact  # noqa: E402
 from auditor.oscal.exporter import to_oscal_assessment_results, to_oscal_poam  # noqa: E402
 from auditor.retrieval.retriever import warm_cache  # noqa: E402
 from auditor.tools.audit_policy_pdf import extract_pdf_text  # noqa: E402
-from auditor.tools.compliance_qa import stream_compliance_answer  # noqa: E402
+from auditor.tools.compliance_qa import (  # noqa: E402
+    stream_compliance_answer,
+    stream_followup_answer,
+)
 
 # ---- Page setup ------------------------------------------------------------
 
@@ -672,6 +676,12 @@ with st.sidebar:
             help="Runs a Nuclei DAST scan. Only scan targets you are authorized to test.",
             label_visibility="collapsed",
         )
+        host_target = st.text_input(
+            "Host / machine",
+            placeholder="Machine to harden-audit, e.g. localhost or user@server",
+            help="Runs a Lynis OS-hardening audit (local, or remote over SSH).",
+            label_visibility="collapsed",
+        )
 
     st.markdown(
         '<div class="sidebar-section">'
@@ -760,6 +770,10 @@ def _build_artifacts() -> list[Artifact]:
     if target_url.strip():
         url = target_url.strip()
         artifacts.append(Artifact(kind="target_url", name=url, content=url))
+
+    if host_target.strip():
+        host = host_target.strip()
+        artifacts.append(Artifact(kind="host", name=f"host:{host}", content=host))
 
     return artifacts
 
@@ -940,11 +954,21 @@ if not st.session_state.messages:
     </div>
   </div>
   <div class="mode">
-    <div class="mode-title"><span class="bullet"></span> Run an audit</div>
+    <div class="mode-title"><span class="bullet"></span> Run an audit &mdash; just say what to scan</div>
     <div class="mode-body">
-      Attach a config, log, policy PDF, or codebase path. Findings get enriched with CVSS, EPSS,
-      CISA KEV, ATT&amp;CK techniques, cross-framework mappings, and secrets scanning &mdash;
-      then exportable as OSCAL 1.1.2.
+      Type a target in chat &mdash; <code>audit ~/myrepo</code>, <code>scan https://example.com</code>,
+      <code>audit aws:prod</code>, <code>audit this machine</code>, <code>image:nginx:1.21</code> &mdash;
+      or attach files / fill the sidebar. The agent runs the right scanners (Trivy, Semgrep, Bandit,
+      gitleaks, Checkov, hadolint, Prowler, Nuclei, Lynis), produces a <b>control-coverage assessment</b>,
+      and exports OSCAL Assessment Results + POA&amp;M.
+    </div>
+  </div>
+  <div class="mode">
+    <div class="mode-title"><span class="bullet"></span> Then dig in</div>
+    <div class="mode-body">
+      After an audit, ask follow-ups in plain language &mdash; &ldquo;explain finding 3&rdquo;,
+      &ldquo;how do I fix the SQL injection?&rdquo;, &ldquo;which controls failed?&rdquo; &mdash;
+      answered against the report and the framework corpus.
     </div>
   </div>
 </div>
@@ -963,31 +987,45 @@ for msg in st.session_state.messages:
 
 # ---- Input handling --------------------------------------------------------
 
-prompt = st.chat_input("Ask a compliance question or describe what to audit...")
+prompt = st.chat_input("Ask a question, or say what to audit (e.g. 'audit ~/myrepo', 'scan https://site.com', 'audit this machine')…")
 if prompt:
+    # Targets come from the sidebar first; otherwise parse them out of the message
+    # so the user can just *talk* to the agent ("audit /path", "scan https://x").
     artifacts = _build_artifacts()
+    detected_from_chat = False
+    if not artifacts:
+        artifacts = parse_targets(prompt)
+        detected_from_chat = bool(artifacts)
+
     user_msg = HumanMessage(content=prompt)
     st.session_state.messages.append(user_msg)
 
     with st.chat_message("user"):
         st.markdown(prompt)
         if artifacts:
+            label = "Detected" if detected_from_chat else "Attached"
             chips = "".join(
                 f'<span class="chip">{a.name} <span class="kind">{a.kind}</span></span>'
                 for a in artifacts
             )
             st.markdown(
-                f'<div class="attached-line">Attached &middot; {chips}</div>',
+                f'<div class="attached-line">{label} &middot; {chips}</div>',
                 unsafe_allow_html=True,
             )
 
     with st.chat_message("assistant"):
-        # ── Compliance path — stream the LLM answer token-by-token ───────
+        # ── No target → follow-up on the last audit, else compliance Q&A ──
         if not artifacts:
+            last_audit = st.session_state.get("last_audit")
             try:
-                answer = st.write_stream(
-                    stream_compliance_answer(prompt, target_frameworks or None)
-                )
+                if last_audit and last_audit.get("report"):
+                    answer = st.write_stream(
+                        stream_followup_answer(prompt, last_audit["report"], target_frameworks or None)
+                    )
+                else:
+                    answer = st.write_stream(
+                        stream_compliance_answer(prompt, target_frameworks or None)
+                    )
             except Exception as exc:
                 answer = f"_(Error generating response: {exc})_"
                 st.markdown(answer)
@@ -1028,6 +1066,9 @@ if prompt:
             answer = final_report or "_(No report generated.)_"
             st.markdown(_render_markdown_with_pills(answer), unsafe_allow_html=True)
             st.session_state.messages.append(AIMessage(content=answer))
+            # Remember this report so the next plain message is answered as a
+            # follow-up ("explain finding 3", "how do I fix the SQLi?").
+            st.session_state["last_audit"] = {"report": answer}
 
             if findings:
                 oscal_doc = to_oscal_assessment_results(

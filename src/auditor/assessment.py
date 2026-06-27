@@ -65,11 +65,15 @@ _KIND_COVERAGE: dict[str, tuple[str, ...]] = {
     ),
     "image_ref": ("RA-5", "SI-2", "SI-7", "CM-6"),
     "target_url": ("SI-10", "SC-7", "SC-8", "SC-23", "AC-3", "IA-5"),
+    "host": (
+        "AC-6", "AC-17", "AU-2", "AU-8", "CM-6", "CM-7", "IA-2",
+        "SC-7", "SC-8", "SC-13", "SC-28", "SI-2", "SI-3", "SI-7",
+    ),
 }
 
 # Kinds whose checks actively execute (per SP 800-53A, "Test") vs inspect ("Examine").
 _TEST_KINDS = frozenset(
-    {"config", "log", "codebase", "cloud_account", "image_ref", "target_url"}
+    {"config", "log", "codebase", "cloud_account", "image_ref", "target_url", "host"}
 )
 
 _SEVERITY_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
