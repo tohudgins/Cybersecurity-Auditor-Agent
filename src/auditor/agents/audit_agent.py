@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from auditor.agents.state import AuditorState
 from auditor.enrichment.mappings import enrich_with_mappings
@@ -32,25 +33,37 @@ def _audit_one(artifact: Artifact, frameworks: list[str] | None) -> list[Finding
     return []
 
 
+def _audit_one_safe(artifact: Artifact, frameworks: list[str] | None) -> list[Finding]:
+    """Audit a single artifact, converting any tool crash into an info finding so
+    one bad artifact can't sink the whole run."""
+    try:
+        return _audit_one(artifact, frameworks)
+    except Exception as e:
+        log.exception("Audit failed for %s", artifact.name)
+        return [
+            Finding(
+                title=f"Audit tool error while processing {artifact.name}",
+                severity="info",
+                evidence=f"{type(e).__name__}: {e}",
+                recommendation="Re-upload the artifact or check the server logs.",
+                source_artifact=artifact.name,
+            )
+        ]
+
+
 def audit_node(state: AuditorState) -> dict:
     artifacts: list[Artifact] = state.get("artifacts") or []
     frameworks = state.get("target_frameworks") or None
 
     all_findings: list[Finding] = []
-    for artifact in artifacts:
-        try:
-            all_findings.extend(_audit_one(artifact, frameworks))
-        except Exception as e:  # don't let one bad artifact kill the run
-            log.exception("Audit failed for %s", artifact.name)
-            all_findings.append(
-                Finding(
-                    title=f"Audit tool error while processing {artifact.name}",
-                    severity="info",
-                    evidence=f"{type(e).__name__}: {e}",
-                    recommendation="Re-upload the artifact or check the server logs.",
-                    source_artifact=artifact.name,
-                )
-            )
+    if artifacts:
+        # Artifacts are independent and each spends most of its time waiting on
+        # LLM/subprocess I/O, so audit them concurrently. Order is preserved by
+        # reading futures in submission order; results are re-ranked downstream.
+        with ThreadPoolExecutor(max_workers=min(len(artifacts), 8)) as pool:
+            futures = [pool.submit(_audit_one_safe, a, frameworks) for a in artifacts]
+            for future in futures:
+                all_findings.extend(future.result())
 
     enrich_findings(all_findings)
     enrich_with_mappings(all_findings)

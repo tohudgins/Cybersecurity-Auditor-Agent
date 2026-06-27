@@ -96,7 +96,11 @@ def _executive_summary(findings: list[Finding], frameworks: list[str] | None) ->
         f"- [{f.severity.upper()}] {f.title} (framework: {f.framework or 'n/a'}, control: {f.control_id or 'n/a'})"
         for f in findings
     )
-    llm = ChatOpenAI(model=settings.fast_model, api_key=settings.openai_api_key)
+    llm = ChatOpenAI(
+        model=settings.fast_model,
+        api_key=settings.openai_api_key,
+        reasoning_effort=settings.audit_reasoning_effort,
+    )
     chain = EXECUTIVE_SUMMARY_PROMPT | llm | StrOutputParser()
     return chain.invoke(
         {

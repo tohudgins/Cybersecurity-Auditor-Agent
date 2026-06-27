@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+from functools import lru_cache
 
 from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
@@ -20,6 +21,7 @@ from auditor.ingest.web_fetcher import fetch_all
 log = logging.getLogger(__name__)
 
 
+@lru_cache(maxsize=1)
 def get_embeddings() -> OpenAIEmbeddings:
     return OpenAIEmbeddings(
         model=settings.embedding_model,
@@ -27,7 +29,10 @@ def get_embeddings() -> OpenAIEmbeddings:
     )
 
 
+@lru_cache(maxsize=1)
 def get_vectorstore() -> Chroma:
+    # Cached: a single retrieval previously rebuilt the Chroma client and
+    # embeddings object three times (exact lookup + vector search + BM25 build).
     return Chroma(
         collection_name=settings.chroma_collection,
         embedding_function=get_embeddings(),

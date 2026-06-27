@@ -12,6 +12,7 @@ parses out a control ID can short-circuit to the exact chunk.
 from __future__ import annotations
 
 import logging
+import pickle
 import re
 from collections.abc import Sequence
 
@@ -26,6 +27,45 @@ log = logging.getLogger(__name__)
 # Cached BM25 index, built lazily from all Chroma docs on first query.
 _bm25: BM25Okapi | None = None
 _bm25_docs: list[Document] = []
+
+# On-disk BM25 cache so the first query of a fresh process doesn't pay the cost
+# of pulling every chunk out of Chroma and re-tokenizing the whole corpus.
+# Keyed on the collection's chunk count, so a rebuild (which changes the count)
+# transparently invalidates it. Delete the file to force a rebuild otherwise.
+_BM25_CACHE_PATH = settings.chroma_dir / "bm25_cache.pkl"
+
+
+def _collection_count(store) -> int | None:
+    """Cheap doc count for cache invalidation; None if the store can't report it
+    (e.g. the in-memory fake store used in tests)."""
+    try:
+        return store._collection.count()
+    except Exception:
+        return None
+
+
+def _load_bm25_cache(count: int) -> tuple[BM25Okapi, list[Document]] | None:
+    if not _BM25_CACHE_PATH.exists():
+        return None
+    try:
+        with _BM25_CACHE_PATH.open("rb") as fh:
+            data = pickle.load(fh)
+        if data.get("count") != count:
+            return None
+        log.info("Loaded BM25 cache (%d chunks) from %s", count, _BM25_CACHE_PATH)
+        return data["bm25"], data["docs"]
+    except Exception as exc:  # corrupt/incompatible cache — rebuild
+        log.warning("Ignoring unreadable BM25 cache: %s", exc)
+        return None
+
+
+def _save_bm25_cache(count: int, bm25: BM25Okapi, docs: list[Document]) -> None:
+    try:
+        _BM25_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with _BM25_CACHE_PATH.open("wb") as fh:
+            pickle.dump({"count": count, "bm25": bm25, "docs": docs}, fh)
+    except Exception as exc:  # best-effort; a failed write just costs a rebuild
+        log.warning("Could not write BM25 cache: %s", exc)
 
 # Tokens that look like control IDs and should be preserved as-is by the
 # tokenizer (so BM25 can match them exactly).
@@ -55,9 +95,17 @@ def _framework_filter(frameworks: Sequence[str] | None) -> dict | None:
 
 
 def _build_bm25_index() -> None:
-    """Pull every chunk from Chroma and build an in-memory BM25 index."""
+    """Build (or load from disk) an in-memory BM25 index over all Chroma chunks."""
     global _bm25, _bm25_docs
     store = get_vectorstore()
+
+    count = _collection_count(store)
+    if count is not None:
+        cached = _load_bm25_cache(count)
+        if cached is not None:
+            _bm25, _bm25_docs = cached
+            return
+
     raw = store.get()  # {"ids": [...], "documents": [...], "metadatas": [...]}
     docs = [
         Document(page_content=t or "", metadata=m or {})
@@ -68,6 +116,9 @@ def _build_bm25_index() -> None:
     tokenized = [_tokenize(d.page_content) for d in docs]
     # Guard against an empty corpus (e.g., before index is built)
     _bm25 = BM25Okapi(tokenized) if tokenized and any(tokenized) else None
+
+    if count is not None and _bm25 is not None:
+        _save_bm25_cache(count, _bm25, _bm25_docs)
 
 
 def _bm25_search(query: str, k: int) -> list[Document]:
@@ -175,6 +226,16 @@ def format_docs(docs: Sequence[Document]) -> str:
         header += "]"
         blocks.append(f"{header}\n{d.page_content}")
     return "\n\n---\n\n".join(blocks)
+
+
+def warm_cache() -> None:
+    """Eagerly build/load the BM25 index (and instantiate the Chroma client) so
+    the first user query doesn't pay the cold-start cost. Idempotent — backed by
+    the in-memory and on-disk caches, so repeat calls are no-ops. Intended to be
+    called once at app startup (e.g. behind Streamlit's ``st.cache_resource``).
+    """
+    if _bm25 is None:
+        _build_bm25_index()
 
 
 def reset_bm25_cache() -> None:

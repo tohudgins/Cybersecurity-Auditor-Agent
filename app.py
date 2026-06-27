@@ -24,6 +24,7 @@ from auditor.agents.graph import AUDITOR_GRAPH  # noqa: E402
 from auditor.ingest.pdf_loader import FRAMEWORK_NAMES  # noqa: E402
 from auditor.models import Artifact  # noqa: E402
 from auditor.oscal.exporter import to_oscal_assessment_results  # noqa: E402
+from auditor.retrieval.retriever import warm_cache  # noqa: E402
 from auditor.tools.audit_policy_pdf import extract_pdf_text  # noqa: E402
 from auditor.tools.compliance_qa import stream_compliance_answer  # noqa: E402
 
@@ -35,6 +36,17 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+
+# Build/load the BM25 index + Chroma client once per server process, at startup,
+# so the cold-start cost lands here instead of on the first user question.
+@st.cache_resource(show_spinner=False)
+def _warm_retrieval() -> bool:
+    warm_cache()
+    return True
+
+
+_warm_retrieval()
 
 
 # ---- Theme / CSS -----------------------------------------------------------

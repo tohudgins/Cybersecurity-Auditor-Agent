@@ -21,7 +21,11 @@ def answer_compliance_question(
     if not docs:
         return _NO_DOCS_MSG
 
-    llm = ChatOpenAI(model=settings.synthesis_model, api_key=settings.openai_api_key)
+    llm = ChatOpenAI(
+        model=settings.synthesis_model,
+        api_key=settings.openai_api_key,
+        reasoning_effort=settings.synthesis_reasoning_effort,
+    )
     chain = COMPLIANCE_QA_PROMPT | llm | StrOutputParser()
     return chain.invoke({"context": format_docs(docs), "question": question})
 
@@ -39,6 +43,10 @@ def stream_compliance_answer(
         yield _NO_DOCS_MSG
         return
 
-    llm = ChatOpenAI(model=settings.synthesis_model, api_key=settings.openai_api_key)
+    llm = ChatOpenAI(
+        model=settings.synthesis_model,
+        api_key=settings.openai_api_key,
+        reasoning_effort=settings.synthesis_reasoning_effort,
+    )
     chain = COMPLIANCE_QA_PROMPT | llm | StrOutputParser()
     yield from chain.stream({"context": format_docs(docs), "question": question})

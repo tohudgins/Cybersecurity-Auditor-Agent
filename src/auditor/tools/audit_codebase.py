@@ -18,6 +18,7 @@ import json
 import logging
 import re
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from auditor.enrichment import epss, kev
@@ -574,13 +575,31 @@ def audit_codebase(path: str | Path) -> list[Finding]:
             )
         ]
 
-    findings = _run_trivy(scanned_path)
-
-    findings.extend(_run_semgrep(scanned_path))
-
+    # Each scanner is an independent, blocking subprocess (or filesystem walk),
+    # so they run concurrently in threads — wall-clock collapses to the slowest
+    # scanner instead of their sum. Subprocess waits release the GIL, so threads
+    # (not processes) are the right primitive here. Order is preserved by reading
+    # the futures in submission order; `normalize_findings` re-ranks downstream
+    # regardless, so ordering is cosmetic.
+    scanners = [_run_trivy, _run_semgrep, _run_secrets_scan]
     if _has_python_files(Path(scanned_path)):
-        findings.extend(_run_bandit(scanned_path))
+        scanners.append(_run_bandit)
 
-    findings.extend(_run_secrets_scan(scanned_path))
+    findings: list[Finding] = []
+    with ThreadPoolExecutor(max_workers=len(scanners)) as pool:
+        futures = [pool.submit(scan, scanned_path) for scan in scanners]
+        for scan, future in zip(scanners, futures, strict=True):
+            try:
+                findings.extend(future.result())
+            except Exception as exc:  # one scanner crashing shouldn't sink the audit
+                log.exception("Scanner %s failed", scan.__name__)
+                findings.append(
+                    _info(
+                        title=f"{scan.__name__} crashed",
+                        evidence=f"{type(exc).__name__}: {exc}",
+                        recommendation="Check the server logs; re-run the scanner manually to diagnose.",
+                        source=scanned_path,
+                    )
+                )
 
     return findings
