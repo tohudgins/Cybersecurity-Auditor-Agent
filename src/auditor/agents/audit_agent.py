@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from auditor.agents.state import AuditorState
 from auditor.assessment import assess_controls
+from auditor.config import settings
 from auditor.enrichment.mappings import enrich_with_mappings
 from auditor.enrichment.mitre import enrich_findings
 from auditor.enrichment.risk import normalize_findings
@@ -22,7 +23,22 @@ from auditor.tools.audit_web import audit_web
 log = logging.getLogger(__name__)
 
 
+# Kinds that touch the server's filesystem / OS; gated by allow_local_targets so
+# a shared/hosted deployment can't be used to read or scan the host.
+_LOCAL_KINDS = frozenset({"codebase", "host"})
+
+
 def _audit_one(artifact: Artifact, frameworks: list[str] | None) -> list[Finding]:
+    if artifact.kind in _LOCAL_KINDS and not settings.allow_local_targets:
+        return [
+            Finding(
+                title=f"Local target '{artifact.kind}' is disabled",
+                severity="info",
+                evidence="This deployment has AUDITOR_ALLOW_LOCAL_TARGETS disabled.",
+                recommendation="Run the auditor locally to scan filesystem paths or hosts.",
+                source_artifact=artifact.name,
+            )
+        ]
     if artifact.kind == "text":
         return audit_system_description(artifact.content, frameworks=frameworks, source_artifact=artifact.name)
     if artifact.kind == "policy_pdf":

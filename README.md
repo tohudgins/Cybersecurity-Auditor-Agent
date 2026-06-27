@@ -269,6 +269,22 @@ docker run -p 8501:8501 -e OPENAI_API_KEY=sk-... -v auditor-chromadb:/app/.chrom
 
 The hosted version runs **compliance Q&A** (with streaming output), **policy PDF audit**, **config / IaC audits via Checkov**, **Python SAST via Bandit / Semgrep** (pip-installable), **OSCAL export**, and **audit history**. Scanners that ship as system binaries — Trivy (CVEs + IaC misconfig), gitleaks (secrets), and hadolint (Dockerfile linting) — aren't available on Streamlit Cloud, so the agent gracefully surfaces info findings and falls back to regex heuristics. For full functionality, use the local Docker setup.
 
+> **Shared deployments:** set `AUDITOR_ALLOW_LOCAL_TARGETS=false` so users can't read or scan the server's filesystem/OS through the chat (codebase, host, and chat-referenced file targets are refused). It defaults to `true` for normal local use.
+
+---
+
+## Security posture
+
+The agent shells out to real scanners, so it treats its own inputs as untrusted:
+
+- **No shell** — every external tool is invoked via `subprocess.run([...])` argument lists (never `shell=True`), so messages can't inject shell commands.
+- **Argument-injection hardening** — SSH host specs, container image references, and cloud profile names are validated and may not begin with `-`, so a value like `-oProxyCommand=…` can't be reinterpreted as a tool flag (a classic RCE vector); image refs are also passed after a `--` separator.
+- **Filesystem/OS gating** — `AUDITOR_ALLOW_LOCAL_TARGETS=false` disables codebase/host/chat-file targets for shared hosting; chat-referenced files are size-capped before being read.
+- **Read-only by design** — scanners are pointed at targets in read-only modes; cloud auditing uses your existing read-only SDK credentials, which the app never handles or stores.
+- **Graceful degradation** — a missing scanner becomes an info finding, never a crash.
+
+Only audit systems you are authorized to assess.
+
 ---
 
 ## Project structure

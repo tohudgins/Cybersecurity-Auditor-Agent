@@ -31,6 +31,34 @@ def test_cloud_keyword_requires_audit_intent():
     assert _kinds("audit aws:prod") == ["cloud_account"]
 
 
+def test_bare_provider_word_is_not_a_target():
+    # "aws" without a profile must never trigger a live scan, even with a verb.
+    assert _kinds("audit aws") == []
+    assert _kinds("scan our gcp environment") == []
+
+
+def test_local_targets_can_be_disabled(monkeypatch, tmp_path):
+    from auditor.config import settings as cfg
+
+    d = tmp_path / "repo"
+    d.mkdir()
+    monkeypatch.setattr(cfg, "allow_local_targets", False)
+    assert parse_targets(f"audit {d}") == []          # filesystem path gated
+    assert parse_targets("audit this machine") == []  # host gated
+    # Non-local targets still work when local is disabled.
+    assert _kinds("scan https://x.test") == ["target_url"]
+
+
+def test_dispatch_blocks_local_kinds_when_disabled(monkeypatch):
+    from auditor.agents import audit_agent
+    from auditor.config import settings as cfg
+    from auditor.models import Artifact
+
+    monkeypatch.setattr(cfg, "allow_local_targets", False)
+    out = audit_agent._audit_one(Artifact(kind="host", name="host:localhost", content="localhost"), None)
+    assert out[0].severity == "info" and "disabled" in out[0].title.lower()
+
+
 def test_this_machine_phrase_with_intent():
     arts = parse_targets("audit this machine please")
     assert arts and arts[0].kind == "host"

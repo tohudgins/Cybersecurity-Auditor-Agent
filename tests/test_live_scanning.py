@@ -61,6 +61,29 @@ def test_cloud_unsupported_provider():
     assert "unsupported" in findings[0].title.lower()
 
 
+def test_cloud_parses_ocsf_shape():
+    """Prowler v4 OCSF output (nested finding_info/resources/unmapped) parses too."""
+    items = [{
+        "status_code": "FAIL", "severity": "High",
+        "finding_info": {"uid": "s3_bucket_public", "title": "S3 bucket is public"},
+        "resources": [{"uid": "my-bucket", "region": "us-east-1", "group": {"name": "s3"}}],
+        "remediation": {"desc": "Make the bucket private"},
+        "unmapped": {"compliance": {"NIST-800-53-r5": ["SC-28"]}},
+    }]
+    findings = audit_cloud._parse_prowler_output(json.dumps(items), "aws")
+    assert len(findings) == 1
+    f = findings[0]
+    assert f.severity == "high"
+    assert f.control_id == "SC-28"
+    assert "s3_bucket_public" in f.title
+
+
+def test_cloud_rejects_unsafe_profile():
+    findings = audit_cloud.audit_cloud("aws:--evil")
+    assert findings[0].severity == "info"
+    assert "invalid cloud profile" in findings[0].title.lower()
+
+
 def test_cloud_handles_jsonl_output():
     lines = "\n".join(json.dumps(x) for x in [
         {"status": "FAIL", "severity": "critical", "check_id": "a", "service_name": "kms"},
@@ -140,3 +163,15 @@ def test_image_missing_trivy_is_info(monkeypatch):
     monkeypatch.setattr(subprocess, "run", _raise)
     findings = ac.audit_image("nginx:1.21")
     assert findings[0].severity == "info"
+
+
+def test_image_rejects_option_injection(monkeypatch):
+    called = {"ran": False}
+
+    def _spy(*_a, **_k):
+        called["ran"] = True
+        return _fake_run(stdout="{}")
+    monkeypatch.setattr(subprocess, "run", _spy)
+    findings = ac.audit_image("--output=/etc/passwd")
+    assert findings[0].severity == "info" and "invalid image" in findings[0].title.lower()
+    assert called["ran"] is False  # trivy never ran

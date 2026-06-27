@@ -22,10 +22,14 @@ from __future__ import annotations
 import os
 import re
 
+from auditor.config import settings
 from auditor.models import Artifact
 
 _URL_RE = re.compile(r"^https?://", re.IGNORECASE)
-_CLOUD_RE = re.compile(r"^(aws|gcp|azure)(:[\w-]+)?$", re.IGNORECASE)
+# Require an explicit profile (aws:prod) so a bare provider word in a normal
+# question ("what does aws recommend?") never triggers a live cloud scan; the
+# `cloud:` prefix covers the no-profile case explicitly.
+_CLOUD_RE = re.compile(r"^(aws|gcp|azure):[\w-]+$", re.IGNORECASE)
 _AUDIT_INTENT_RE = re.compile(r"\b(audit|scan|assess|review|check|harden|pentest)\b", re.IGNORECASE)
 _LOCAL_HOST_RE = re.compile(
     r"\b(this|my|the\s+local|local)\s+(machine|host|system|server|box|laptop|computer)\b",
@@ -35,6 +39,10 @@ _SSH_HOST_RE = re.compile(r"^[\w.-]+@[\w.-]+$")
 
 
 def _classify_path(path: str) -> Artifact | None:
+    # Filesystem targets are gated so a shared/hosted deployment can't be used to
+    # read the server's files via a chat message.
+    if not settings.allow_local_targets:
+        return None
     expanded = os.path.expanduser(path)
     if not os.path.exists(expanded):
         return None
@@ -42,6 +50,8 @@ def _classify_path(path: str) -> Artifact | None:
         return Artifact(kind="codebase", name=path, content=expanded)
     name = os.path.basename(expanded).lower()
     try:
+        if os.path.getsize(expanded) > settings.max_intake_file_bytes:
+            return None  # too large to inline into a prompt
         if name.endswith(".pdf"):
             from auditor.tools.audit_policy_pdf import extract_pdf_text
 
@@ -116,6 +126,10 @@ def parse_targets(text: str) -> list[Artifact]:
     # 5. "audit this machine" style phrases → local host.
     if has_intent and (_LOCAL_HOST_RE.search(text) or re.search(r"\blocalhost\b", text, re.IGNORECASE)):
         _add(Artifact(kind="host", name="host:localhost", content="localhost"))
+
+    # Filesystem/OS targets are gated for shared deployments.
+    if not settings.allow_local_targets:
+        artifacts = [a for a in artifacts if a.kind not in ("host", "codebase")]
 
     return artifacts
 

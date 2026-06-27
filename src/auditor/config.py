@@ -35,5 +35,13 @@ class Settings(BaseSettings):
     chunk_overlap: int = 100
     retrieval_k: int = 10
 
+    # Security: when False, targets that touch the server's filesystem or OS
+    # (codebase paths, host audits, chat-referenced files) are refused. Set
+    # AUDITOR_ALLOW_LOCAL_TARGETS=false for shared/hosted deployments so a user
+    # can't read or scan the server. Default True for normal local use.
+    allow_local_targets: bool = Field(default=True, alias="AUDITOR_ALLOW_LOCAL_TARGETS")
+    # Max size (bytes) of a chat-referenced file the intake parser will read.
+    max_intake_file_bytes: int = 5_000_000
+
 
 settings = Settings()

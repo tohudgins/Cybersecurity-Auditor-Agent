@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -41,6 +42,10 @@ _PROWLER_SEVERITY_MAP = {
 
 _SUPPORTED_PROVIDERS = {"aws", "gcp", "azure", "kubernetes"}
 
+# A safe profile name (passed to prowler `-p`). No leading '-' (which prowler
+# would parse as an option) and no shell metacharacters.
+_SAFE_PROFILE = re.compile(r"^(?!-)[A-Za-z0-9._-]+$")
+
 # Fallback service → NIST 800-53 anchor when a finding carries no NIST compliance
 # mapping. Keeps cloud findings tied to a control so they flow into coverage.
 _SERVICE_CONTROL = {
@@ -58,37 +63,75 @@ def _parse_provider(content: str) -> tuple[str, str | None]:
     return (provider or "aws"), (profile or None)
 
 
+def _dig(d, *path):
+    """Safe nested lookup across dicts and lists: _dig(item, 'resources', 0, 'uid')."""
+    cur = d
+    for key in path:
+        if isinstance(key, int):
+            if not isinstance(cur, list) or not (-len(cur) <= key < len(cur)):
+                return None
+            cur = cur[key]
+        else:
+            if not isinstance(cur, dict):
+                return None
+            cur = cur.get(key)
+    return cur
+
+
+def _first(*vals):
+    for v in vals:
+        if v:
+            return v
+    return None
+
+
 def _nist_control(finding: dict) -> str | None:
-    """Extract a NIST 800-53 control ID from Prowler's compliance block, if any."""
-    compliance = finding.get("compliance") or finding.get("Compliance") or {}
-    if isinstance(compliance, dict):
-        for key, vals in compliance.items():
-            if "800-53" in key.replace("_", "-") and vals:
-                first = vals[0] if isinstance(vals, list) else vals
-                return str(first).strip().upper()
-    service = (finding.get("service_name") or finding.get("ServiceName") or "").lower()
-    return _SERVICE_CONTROL.get(service)
+    """Extract a NIST 800-53 control ID from Prowler's compliance block, if any.
+
+    Handles both the legacy flat ``compliance`` dict and the OCSF location
+    (``unmapped.compliance``).
+    """
+    for compliance in (finding.get("compliance"), finding.get("Compliance"), _dig(finding, "unmapped", "compliance")):
+        if isinstance(compliance, dict):
+            for key, vals in compliance.items():
+                if "800-53" in key.replace("_", "-") and vals:
+                    first = vals[0] if isinstance(vals, list) else vals
+                    return str(first).strip().upper()
+    service = (
+        finding.get("service_name") or finding.get("ServiceName")
+        or _dig(finding, "resources", 0, "group", "name") or ""
+    )
+    return _SERVICE_CONTROL.get(str(service).lower())
 
 
 def _finding_from_prowler(item: dict, provider: str) -> Finding | None:
-    """Map one Prowler check result (FAIL) into a Finding. PASS items return None."""
-    status = (item.get("status") or item.get("Status") or "").upper()
-    if status not in ("FAIL", "MANUAL"):
+    """Map one Prowler FAIL result into a Finding (flat v3 or OCSF v4 shape)."""
+    # OCSF uses status_code; legacy uses status/Status.
+    status = str(_first(item.get("status_code"), item.get("status"), item.get("Status"), "")).upper()
+    if status not in ("FAIL", "FAILED", "MANUAL", "NEW"):
         return None
 
-    severity = _PROWLER_SEVERITY_MAP.get((item.get("severity") or item.get("Severity") or "medium").lower(), "medium")
-    check_id = item.get("check_id") or item.get("CheckID") or "?"
-    title = item.get("check_title") or item.get("CheckTitle") or check_id
-    region = item.get("region") or item.get("Region") or ""
-    resource = item.get("resource_uid") or item.get("resource_id") or item.get("ResourceId") or ""
-    description = item.get("status_detail") or item.get("description") or item.get("Description") or ""
-    remediation = (
-        item.get("remediation_recommendation_text")
-        or (((item.get("remediation") or {}).get("recommendation") or {}).get("text"))
-        or "Review the Prowler check guidance and remediate the misconfiguration."
+    severity = _PROWLER_SEVERITY_MAP.get(
+        str(_first(item.get("severity"), item.get("Severity"), "medium")).lower(), "medium"
+    )
+    check_id = _first(item.get("check_id"), item.get("CheckID"), _dig(item, "finding_info", "uid"),
+                      _dig(item, "metadata", "event_code"), "?")
+    title = _first(item.get("check_title"), item.get("CheckTitle"), _dig(item, "finding_info", "title"), check_id)
+    region = _first(item.get("region"), item.get("Region"), _dig(item, "cloud", "region"),
+                    _dig(item, "resources", 0, "region"), "")
+    resource = _first(item.get("resource_uid"), item.get("resource_id"), item.get("ResourceId"),
+                      _dig(item, "resources", 0, "uid"), "")
+    description = _first(item.get("status_detail"), item.get("status_detail_message"),
+                         item.get("description"), item.get("Description"),
+                         _dig(item, "finding_info", "desc"), item.get("message"), "")
+    remediation = _first(
+        item.get("remediation_recommendation_text"),
+        _dig(item, "remediation", "recommendation", "text"),
+        _dig(item, "remediation", "desc"),
+        "Review the Prowler check guidance and remediate the misconfiguration.",
     )
     control = _nist_control(item)
-    location = " ".join(p for p in (region, resource) if p) or provider
+    location = " ".join(str(p) for p in (region, resource) if p) or provider
 
     return Finding(
         title=f"[{check_id}] {title}",
@@ -134,6 +177,18 @@ def audit_cloud(content: str) -> list[Finding]:
                 severity="info",
                 evidence=f"Provider '{provider}' is not one of {sorted(_SUPPORTED_PROVIDERS)}.",
                 recommendation="Use a spec like 'aws', 'aws:profile-name', 'gcp', or 'azure'.",
+                source_artifact=f"cloud:{provider}",
+                detection_source="scanner",
+            )
+        ]
+
+    if profile and not _SAFE_PROFILE.match(profile):
+        return [
+            Finding(
+                title="Invalid cloud profile",
+                severity="info",
+                evidence=f"Profile '{profile}' contains unsupported characters.",
+                recommendation="Use a profile name of letters, digits, dots, dashes, or underscores.",
                 source_artifact=f"cloud:{provider}",
                 detection_source="scanner",
             )

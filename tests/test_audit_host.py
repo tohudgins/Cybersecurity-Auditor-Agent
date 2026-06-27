@@ -57,6 +57,22 @@ def test_missing_lynis_is_info(monkeypatch):
     assert "lynis" in findings[0].title.lower()
 
 
+def test_remote_rejects_ssh_arg_injection(monkeypatch):
+    """A target that looks like an ssh option (-oProxyCommand=…) must be refused
+    BEFORE ssh is ever invoked."""
+    called = {"ran": False}
+
+    def _spy(*_a, **_k):
+        called["ran"] = True
+        return _fake_run(stdout="")
+    monkeypatch.setattr(subprocess, "run", _spy)
+
+    findings = audit_host.audit_host("-oProxyCommand=touch /tmp/pwned")
+    assert findings[0].severity == "info"
+    assert "invalid host" in findings[0].title.lower()
+    assert called["ran"] is False  # ssh never ran
+
+
 def test_remote_uses_ssh(monkeypatch):
     captured = {}
 

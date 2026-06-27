@@ -135,6 +135,7 @@ Sidebar shows the 3 most recent runs as buttons; a "View all (N) →" button ope
 ## Conventions
 
 - **Single source of truth for config**: `src/auditor/config.py` (`Settings` via `pydantic-settings`). Don't hardcode model names, `.chromadb` path, or `data/` path elsewhere.
+- **Security of tool inputs**: external tools are always invoked via `subprocess.run([...])` (never `shell=True`). User-supplied subprocess args that are positional/value tokens (SSH host spec in `audit_host`, image ref in `audit_codebase.audit_image`, cloud profile in `audit_cloud`) are validated and must not start with `-` to prevent argument-injection; image refs are passed after `--`. Filesystem/OS targets (`codebase`, `host`, chat-referenced files) are gated by `settings.allow_local_targets` (`AUDITOR_ALLOW_LOCAL_TARGETS`, default True) — enforced in `intake.parse_targets` and `audit_agent._audit_one`; chat files are capped at `settings.max_intake_file_bytes`.
 - **Chroma collection name**: `frameworks_v2`. Bumping the schema (e.g., adding new metadata fields) should bump this string.
 - **Chunk metadata**: every chunk has `framework`, `source`, `page`. Control-catalog chunks additionally have `control_id`. Sub-chunks of long controls have `chunk_part`.
 - **Audit tools always return `list[Finding]`**. Heuristic findings come first, then LLM findings (de-duplicated). The reporting agent handles ordering and rendering.

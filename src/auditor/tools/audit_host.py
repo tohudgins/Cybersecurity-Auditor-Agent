@@ -24,6 +24,11 @@ from auditor.models import Finding
 
 log = logging.getLogger(__name__)
 
+# A safe SSH target: optional user@, then host. No leading '-' (which ssh would
+# parse as an option, e.g. -oProxyCommand=… → remote code execution), no shell
+# metacharacters. Validated before the value ever reaches `ssh`.
+_SAFE_SSH_TARGET = re.compile(r"^(?!-)[A-Za-z0-9._-]+(@(?!-)[A-Za-z0-9._-]+)?$")
+
 _LYNIS_INSTALL_HINT = (
     "Lynis is not installed. Install: `brew install lynis` (macOS), "
     "`apt install lynis` (Debian/Ubuntu), or see https://github.com/CISOfy/lynis. "
@@ -148,6 +153,15 @@ def audit_host(content: str) -> list[Finding]:
     target = (content or "localhost").strip()
     is_local = target in ("", "localhost", "127.0.0.1") or target.lower() == "this machine"
     label = "localhost" if is_local else target
+
+    # Reject SSH targets that could inject `ssh` options (arg-injection → RCE).
+    if not is_local and not _SAFE_SSH_TARGET.match(target):
+        return [_info(
+            "Invalid host target",
+            f"'{target}' is not a valid SSH target (expected host or user@host, no leading '-').",
+            "Use a plain host or user@host (alphanumerics, dots, hyphens).",
+            label,
+        )]
 
     text, proc = (_run_local(label) if is_local else _run_remote(target))
 

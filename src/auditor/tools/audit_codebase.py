@@ -239,8 +239,11 @@ def audit_image(image_ref: str) -> list[Finding]:
     vulnerable dependency manifest.
     """
     ref = image_ref.strip()
+    if not ref or ref.startswith("-"):
+        return [_info("Invalid image reference", f"'{ref}' is not a valid image reference.",
+                      "Provide an image reference like `nginx:1.21` or `ghcr.io/org/app@sha256:…`.", ref)]
     cmd = ["trivy", "image", "--scanners", "vuln,misconfig", "--format", "json",
-           "--quiet", "--severity", "HIGH,CRITICAL", ref]
+           "--quiet", "--severity", "HIGH,CRITICAL", "--", ref]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     except FileNotFoundError:
