@@ -16,6 +16,23 @@ A local Streamlit app that puts a cybersecurity GRC analyst behind a chat box. Y
 
 Unlike a bare scanner, it assesses controls the way an assessor does: it reports what passed, what failed, and — honestly — what went **unassessed** because no artifact exercised it, with a coverage percentage. Findings are separated into **deterministic** (scanner/heuristic) vs **AI-assisted** evidence, and results export as both OSCAL Assessment Results and an OSCAL POA&M.
 
+---
+
+## What you can use it for
+
+It orchestrates the standard open-source security toolchain, normalizes every result into one risk-ranked model, maps it to controls across six frameworks, and renders an assessment with coverage + exportable evidence. Concretely:
+
+| If you are… | You can… | What you get back |
+|---|---|---|
+| **A GRC analyst prepping for an audit** (SOC 2 / ISO 27001 / FedRAMP / PCI) | Point it at the systems in scope and ask "audit X" | A control-coverage assessment (Satisfied / Not Satisfied / Not Assessed + method), cross-framework mappings, and **OSCAL Assessment Results + POA&M** you can hand to a GRC platform or use as evidence/work-paper starting points |
+| **A developer / AppSec engineer** | `audit ~/service-repo` before a release | Dependency CVEs (with KEV/EPSS), SAST findings, IaC/Dockerfile misconfigs, and leaked secrets — each tied to a CWE → ASVS → NIST control, ranked by real exploit risk |
+| **A DevOps / cloud engineer** | `audit aws:prod`, `image:myapp:1.4` | Live cloud-posture failures (Prowler) and image CVEs/misconfigs (Trivy), mapped to NIST controls and prioritized — a fast "where are we exposed?" pass |
+| **A security engineer / pentester** | `scan https://staging.example.com` | A Nuclei DAST pass triaged into the same risk model, so web findings sit next to code and cloud findings in one report |
+| **A sysadmin / blue-teamer** | `audit this machine` or `audit user@server` | A Lynis OS-hardening review (SSH, auth, firewall, logging, kernel, packages) mapped to controls — per host or across a fleet over SSH |
+| **Anyone learning the standards** | Ask "what does AC-2 require?" or follow up on a finding | Cited answers from the indexed corpus (NIST, CIS, OWASP, CISA, MITRE), and report-grounded remediation guidance |
+
+**A typical real-life flow:** scope the system → `audit` each target (repo, cloud account, host, URL) → read the coverage table to see what passed / failed / wasn't covered → ask follow-ups to understand and remediate the top risks → export OSCAL + POA&M as the evidence trail and remediation plan. It compresses the "run six tools, reconcile their output, map it to a framework, write it up" grind into one conversation — while being explicit that it's an **assistive** tool, not a replacement for a qualified assessor (see [Limitations & scope](#limitations--scope)).
+
 ### Finding enrichment
 
 Every finding is enriched with industry-standard context before rendering:
