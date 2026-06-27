@@ -24,7 +24,7 @@ Every finding is enriched with industry-standard context before rendering:
 | **EPSS** | [FIRST.org Exploit Prediction](https://www.first.org/epss/) | Probability + percentile that the CVE will be exploited in the next 30 days |
 | **CVSS v3** | NVD via Trivy | Numeric base score + vector + qualitative severity (e.g., `9.8 (Critical)`) |
 | **MITRE ATT&CK** | Curated keyword map + full ATT&CK Enterprise STIX bundle from [mitre/cti](https://github.com/mitre/cti) (7-day cache) | Tags findings with technique IDs (e.g., brute-force log → `T1110.001`). Two layers: hand-curated high-precision rules, plus multi-word phrase matching across all ~600 ATT&CK techniques. |
-| **Cross-framework mappings** | NIST OLIR + curated | Resolves every NIST 800-53 control to CSF 2.1, CIS v8.1, ISO 27001:2022, PCI DSS v4, SOC 2 TSC ([`data/mappings/control_mappings.json`](data/mappings/control_mappings.json)) |
+| **Cross-framework mappings** | Curated crosswalk + NIST OLIR/CPRT importer | **Bidirectional** resolution across NIST 800-53, CSF 2.1, CIS v8.1, ISO 27001:2022, PCI DSS v4.0.1, SOC 2 TSC ([`data/mappings/control_mappings.json`](data/mappings/control_mappings.json)). A finding anchored on *any* of those frameworks resolves to all the others. SAST findings (Semgrep/Bandit) cross a **CWE → OWASP ASVS 5.0 → NIST** bridge ([`cwe_mappings.json`](data/mappings/cwe_mappings.json)) so a `CWE-89` SQLi finding inherits the full control crosswalk. |
 | **OSCAL export** | NIST [OSCAL 1.1.2](https://pages.nist.gov/OSCAL/reference/latest/assessment-results/) | Every audit run downloadable as Assessment Results JSON (FedRAMP / Trestle / RegScale-ingestible). All enrichment fields above surface as OSCAL `props`. |
 | **Audit history** | Local SQLite at `~/.cache/auditor/history.db` | Every completed run is persisted with its report + OSCAL JSON. Sidebar shows the 3 most recent; "View all" opens a paged browser with per-row delete and confirmed bulk clear. |
 
@@ -92,6 +92,17 @@ Each audit tool pairs regex heuristics (instant, deterministic) with an LLM call
 
 ---
 
+## Performance
+
+The pipeline is tuned so neither mode makes the user wait on avoidable work:
+
+- **Retrieval caches.** The Chroma client and OpenAI embeddings object are `lru_cache`d, so a single hybrid query builds them once instead of three times. The BM25 index is persisted to `.chromadb/bm25_cache.pkl` (keyed on chunk count, so a `--rebuild` auto-invalidates it) and loaded on startup via `st.cache_resource` — the cold-start corpus scan happens at app boot, not on the first question.
+- **Right-sized reasoning.** Compliance synthesis and audit-path LLM calls (per-artifact finding extraction + the executive summary) run at `reasoning_effort="low"`. These are grounded, extractive tasks over context that's already assembled, so low effort sharply cuts time-to-first-token without measurable quality loss. Both knobs are configurable in `config.py`.
+- **Concurrent scanning.** The four codebase scanners (Trivy, Semgrep, Bandit, secrets) run in a thread pool instead of sequentially — wall-clock collapses to the slowest scanner rather than their sum. Multiple uploaded artifacts are audited concurrently for the same reason. Subprocess and network waits release the GIL, so threads are the right primitive; each scanner is independently fault-isolated so one crash can't sink the run.
+- **Enrichment built once.** KEV, EPSS, and ATT&CK STIX catalogs are parsed once into in-memory lookups (24h / 7-day on-disk caches), giving O(1) per-CVE checks across an entire audit.
+
+---
+
 ## Supported frameworks
 
 **Control catalogs** — per-control chunking, exact-ID retrieval:
@@ -133,6 +144,19 @@ python -m auditor.ingest.frameworks_index --fetch-web --rebuild
 Idempotent — files already on disk are skipped. Use `--force-fetch` to refresh.
 
 To add a new framework: drop the PDF in `data/` (or add a `WebSource` in `ingest/web_fetcher.py`), add an entry to `FRAMEWORK_NAMES` in `ingest/pdf_loader.py`, optionally extend `_CONTROL_PATTERNS` with a control-ID regex, then `--rebuild`.
+
+### Cross-framework mappings
+
+The crosswalk is anchored on NIST SP 800-53 Rev. 5 and resolves bidirectionally to NIST CSF 2.1, CIS Controls v8.1, ISO/IEC 27001:2022, PCI DSS v4.0.1, and SOC 2 TSC. A CWE → OWASP ASVS 5.0 → NIST bridge gives SAST findings the same cross-framework context. To add a mapping, edit [`data/mappings/control_mappings.json`](data/mappings/control_mappings.json) (or [`cwe_mappings.json`](data/mappings/cwe_mappings.json)) — no code change required. A test (`tests/test_mappings.py::test_every_scanner_control_id_is_mapped`) fails the build if a scanner emits a control with no mapping.
+
+To **augment the curated crosswalk from NIST's official machine-readable exports** (OLIR via the Cybersecurity & Privacy Reference Tool):
+
+```bash
+python -m auditor.ingest.olir_import --fetch          # dry run: parsed reference counts
+python -m auditor.ingest.olir_import --fetch --merge  # union OLIR references into the curated file
+```
+
+The importer is orientation-agnostic (detects the 800-53 side by ID shape) and only augments controls already present in the curated file, so it never invents an un-vetted entry. The curated file remains the source of truth used in CI and the demo.
 
 ---
 
@@ -288,11 +312,20 @@ If a scanner isn't on PATH, the corresponding tool emits an info-level finding w
 
 ---
 
+## Limitations & scope
+
+Stated plainly, because a GRC tool that overstates its rigor is worse than one that doesn't:
+
+- **Mappings are informative, not authoritative.** The crosswalk is curated from the public OLIR/CIS/ISO/PCI/SOC 2 references and covers the control families this agent exercises (~40 anchor controls, ~35 CWEs) — not the full ~1,000-control 800-53 catalog. The OLIR importer can augment it from NIST's machine-readable exports, but a compliance decision should still be confirmed against the official source. ASVS references are at chapter/domain granularity so they survive ASVS minor revisions.
+- **LLM findings are assistive, not a substitute for a human assessor.** The deterministic scanners (Trivy, Semgrep, Bandit, gitleaks, Checkov, hadolint) and regex heuristics are the evidentiary backbone; the LLM layer adds narrative analysis and can produce false positives/negatives. Findings are meant to be triaged, not auto-accepted.
+- **Point-in-time, file/path-scoped.** The agent assesses the artifacts you give it; it doesn't do continuous control monitoring, evidence collection, or ticketing. The OSCAL export exists so results can feed a system that does.
+- **Single-user, local-first.** Audit history is a local SQLite DB — no multi-tenant RBAC or shareable report links yet.
+
 ## Roadmap
 
 Deliberate v1 cuts; happy to revisit:
 
-- **Full NIST OLIR import** — replace the curated `control_mappings.json` with the complete OLIR set (~3,000 entries).
+- **Expand the OLIR import** — broaden `OLIR_SOURCES` to the full CSF / ISO / SP 800-171 reference set and grow the anchor catalog toward complete 800-53 coverage.
 - **CIS Foundations Benchmarks** — ingest the AWS / Azure / GCP benchmarks and route Terraform findings to the cloud-specific catalog.
 - **Custom Checkov policies** tagging NIST 800-53 control IDs (stock rules tag CIS only).
 - **Live cloud-API scanning** — AWS Config / Azure Policy ingestion instead of file uploads.

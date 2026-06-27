@@ -1,0 +1,52 @@
+{
+  "_meta": {
+    "description": "CWE → OWASP ASVS 5.0 → NIST SP 800-53 Rev. 5 bridge. SAST scanners (Semgrep, Bandit) report findings keyed on a CWE; this table resolves each common CWE to its OWASP ASVS 5.0 verification domain and to a NIST SP 800-53 anchor control. The enrichment engine then expands that anchor through control_mappings.json so SAST findings inherit the full cross-framework crosswalk (CSF 2.1, CIS, ISO 27001, PCI DSS, SOC 2). ASVS references are given at chapter/domain granularity (names, not requirement numbers) so they remain valid across ASVS minor revisions. Informative, not authoritative — see README 'Limitations & scope'.",
+    "version": "1.0",
+    "frameworks": ["OWASP ASVS 5.0", "NIST SP 800-53 Rev. 5"],
+    "sources": [
+      "MITRE CWE list (https://cwe.mitre.org/)",
+      "OWASP ASVS 5.0 verification chapters (https://owasp.org/www-project-application-security-verification-standard/)",
+      "OWASP Top 10 2021/2025 CWE groupings",
+      "NIST SP 800-53 Rev. 5 control catalog"
+    ]
+  },
+  "mappings": {
+    "CWE-20": {"title": "Improper Input Validation", "nist": "SI-10", "OWASP ASVS 5.0": ["Validation, Sanitization and Encoding"]},
+    "CWE-22": {"title": "Path Traversal", "nist": "AC-3", "OWASP ASVS 5.0": ["Files and Resources", "Access Control"]},
+    "CWE-77": {"title": "Command Injection", "nist": "SI-10", "OWASP ASVS 5.0": ["Validation, Sanitization and Encoding"]},
+    "CWE-78": {"title": "OS Command Injection", "nist": "SI-10", "OWASP ASVS 5.0": ["Validation, Sanitization and Encoding"]},
+    "CWE-79": {"title": "Cross-site Scripting (XSS)", "nist": "SI-10", "OWASP ASVS 5.0": ["Validation, Sanitization and Encoding"]},
+    "CWE-89": {"title": "SQL Injection", "nist": "SI-10", "OWASP ASVS 5.0": ["Validation, Sanitization and Encoding"]},
+    "CWE-90": {"title": "LDAP Injection", "nist": "SI-10", "OWASP ASVS 5.0": ["Validation, Sanitization and Encoding"]},
+    "CWE-94": {"title": "Code Injection", "nist": "SI-10", "OWASP ASVS 5.0": ["Validation, Sanitization and Encoding"]},
+    "CWE-116": {"title": "Improper Encoding or Escaping of Output", "nist": "SI-10", "OWASP ASVS 5.0": ["Validation, Sanitization and Encoding"]},
+    "CWE-200": {"title": "Exposure of Sensitive Information", "nist": "AC-3", "OWASP ASVS 5.0": ["Access Control", "Data Protection"]},
+    "CWE-256": {"title": "Plaintext Storage of a Password", "nist": "IA-5", "OWASP ASVS 5.0": ["Authentication"]},
+    "CWE-259": {"title": "Use of Hard-coded Password", "nist": "IA-5", "OWASP ASVS 5.0": ["Authentication"]},
+    "CWE-269": {"title": "Improper Privilege Management", "nist": "AC-6", "OWASP ASVS 5.0": ["Access Control"]},
+    "CWE-276": {"title": "Incorrect Default Permissions", "nist": "AC-6", "OWASP ASVS 5.0": ["Access Control"]},
+    "CWE-285": {"title": "Improper Authorization", "nist": "AC-3", "OWASP ASVS 5.0": ["Access Control"]},
+    "CWE-287": {"title": "Improper Authentication", "nist": "IA-2", "OWASP ASVS 5.0": ["Authentication"]},
+    "CWE-295": {"title": "Improper Certificate Validation", "nist": "SC-8", "OWASP ASVS 5.0": ["Communication"]},
+    "CWE-306": {"title": "Missing Authentication for Critical Function", "nist": "IA-2", "OWASP ASVS 5.0": ["Authentication"]},
+    "CWE-311": {"title": "Missing Encryption of Sensitive Data", "nist": "SC-28", "OWASP ASVS 5.0": ["Cryptography", "Data Protection"]},
+    "CWE-312": {"title": "Cleartext Storage of Sensitive Information", "nist": "SC-28", "OWASP ASVS 5.0": ["Data Protection"]},
+    "CWE-319": {"title": "Cleartext Transmission of Sensitive Information", "nist": "SC-8", "OWASP ASVS 5.0": ["Communication"]},
+    "CWE-321": {"title": "Use of Hard-coded Cryptographic Key", "nist": "SC-12", "OWASP ASVS 5.0": ["Cryptography"]},
+    "CWE-326": {"title": "Inadequate Encryption Strength", "nist": "SC-13", "OWASP ASVS 5.0": ["Cryptography"]},
+    "CWE-327": {"title": "Use of a Broken or Risky Cryptographic Algorithm", "nist": "SC-13", "OWASP ASVS 5.0": ["Cryptography"]},
+    "CWE-330": {"title": "Use of Insufficiently Random Values", "nist": "SC-13", "OWASP ASVS 5.0": ["Cryptography"]},
+    "CWE-352": {"title": "Cross-Site Request Forgery (CSRF)", "nist": "SC-23", "OWASP ASVS 5.0": ["Session Management"]},
+    "CWE-400": {"title": "Uncontrolled Resource Consumption", "nist": "SC-5", "OWASP ASVS 5.0": ["Business Logic"]},
+    "CWE-434": {"title": "Unrestricted Upload of File with Dangerous Type", "nist": "SI-10", "OWASP ASVS 5.0": ["Files and Resources"]},
+    "CWE-502": {"title": "Deserialization of Untrusted Data", "nist": "SI-10", "OWASP ASVS 5.0": ["Validation, Sanitization and Encoding"]},
+    "CWE-522": {"title": "Insufficiently Protected Credentials", "nist": "IA-5", "OWASP ASVS 5.0": ["Authentication"]},
+    "CWE-601": {"title": "Open Redirect", "nist": "SI-10", "OWASP ASVS 5.0": ["Validation, Sanitization and Encoding"]},
+    "CWE-611": {"title": "Improper Restriction of XML External Entity Reference (XXE)", "nist": "SI-10", "OWASP ASVS 5.0": ["Validation, Sanitization and Encoding"]},
+    "CWE-732": {"title": "Incorrect Permission Assignment for Critical Resource", "nist": "AC-6", "OWASP ASVS 5.0": ["Access Control"]},
+    "CWE-798": {"title": "Use of Hard-coded Credentials", "nist": "IA-5", "OWASP ASVS 5.0": ["Authentication"]},
+    "CWE-862": {"title": "Missing Authorization", "nist": "AC-3", "OWASP ASVS 5.0": ["Access Control"]},
+    "CWE-863": {"title": "Incorrect Authorization", "nist": "AC-3", "OWASP ASVS 5.0": ["Access Control"]},
+    "CWE-918": {"title": "Server-Side Request Forgery (SSRF)", "nist": "SC-7", "OWASP ASVS 5.0": ["Validation, Sanitization and Encoding"]}
+  }
+}

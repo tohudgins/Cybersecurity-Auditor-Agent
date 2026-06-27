@@ -1,15 +1,22 @@
 {
   "_meta": {
-    "description": "Cross-framework control mappings, NIST SP 800-53 Rev. 5 as the anchor. Derived from NIST OLIR informative references (https://csrc.nist.gov/projects/olir), the CIS Controls v8.1 mapping appendix, and AICPA SOC 2 / PCI SSC public guidance. Hand-curated subset focused on controls this agent commonly cites in audit findings.",
+    "description": "Cross-framework control mappings with NIST SP 800-53 Rev. 5 as the anchor. Each entry resolves a 800-53 control to its informative-reference equivalents in NIST CSF 2.1, CIS Controls v8.1, ISO/IEC 27001:2022 Annex A, PCI DSS v4.0.1, and AICPA SOC 2 Trust Services Criteria. Curated from the public crosswalks listed under 'sources' and focused on the control families this agent exercises (access control, audit/logging, configuration, identity, integrity, comms/crypto, contingency, incident response, risk & security assessment). These are informative, not authoritative, references — see README 'Limitations & scope'. The companion OLIR importer (auditor.ingest.olir_import) can regenerate/augment this file from NIST's official machine-readable exports.",
     "anchor": "NIST SP 800-53 Rev. 5",
-    "version": "1.0",
+    "version": "2.0",
+    "frameworks": [
+      "NIST CSF 2.1",
+      "CIS Controls v8.1",
+      "ISO 27001:2022",
+      "PCI DSS v4.0.1",
+      "SOC 2 TSC"
+    ],
     "sources": [
-      "NIST SP 800-53 Rev. 5 Appendix F (control catalog)",
-      "NIST OLIR — NIST CSF 2.x to SP 800-53 Rev. 5 mapping (subcategory IDs stable across 2.0/2.1)",
-      "NIST OLIR — ISO/IEC 27001:2022 to SP 800-53 Rev. 5",
-      "CIS Controls v8.1 — Mappings to other frameworks",
-      "PCI DSS v4.0.1 — Reporting templates control objectives",
-      "AICPA SOC 2 Trust Services Criteria (TSP Section 100, 2017)"
+      "NIST SP 800-53 Rev. 5 (control catalog + control titles)",
+      "NIST OLIR / CPRT — CSF 2.x ↔ SP 800-53 Rev. 5 informative references (subcategory IDs stable across CSF 2.0/2.1)",
+      "NIST OLIR / CPRT — ISO/IEC 27001:2022 ↔ SP 800-53 Rev. 5",
+      "CIS Controls v8.1 — Mappings to NIST SP 800-53 and other frameworks",
+      "PCI DSS v4.0.1 — requirements and testing procedures",
+      "AICPA SOC 2 Trust Services Criteria (2017, rev. 2022)"
     ]
   },
   "mappings": {
@@ -37,6 +44,14 @@
       "PCI DSS v4.0.1": ["1.2", "1.3", "1.4"],
       "SOC 2 TSC": ["CC6.6"]
     },
+    "AC-5": {
+      "title": "Separation of Duties",
+      "NIST CSF 2.1": ["PR.AA-05", "GV.RR-02"],
+      "CIS Controls v8.1": ["6.8"],
+      "ISO 27001:2022": ["A.5.3"],
+      "PCI DSS v4.0.1": ["6.4.2", "7.2"],
+      "SOC 2 TSC": ["CC6.1", "CC6.3"]
+    },
     "AC-6": {
       "title": "Least Privilege",
       "NIST CSF 2.1": ["PR.AA-05"],
@@ -53,6 +68,22 @@
       "PCI DSS v4.0.1": ["8.3.4"],
       "SOC 2 TSC": ["CC6.1"]
     },
+    "AC-11": {
+      "title": "Device Lock",
+      "NIST CSF 2.1": ["PR.AA-05"],
+      "CIS Controls v8.1": ["4.3"],
+      "ISO 27001:2022": ["A.8.1"],
+      "PCI DSS v4.0.1": ["8.2.8"],
+      "SOC 2 TSC": ["CC6.1"]
+    },
+    "AC-12": {
+      "title": "Session Termination",
+      "NIST CSF 2.1": ["PR.AA-05"],
+      "CIS Controls v8.1": ["4.3"],
+      "ISO 27001:2022": ["A.8.1"],
+      "PCI DSS v4.0.1": ["8.2.8"],
+      "SOC 2 TSC": ["CC6.1"]
+    },
     "AC-17": {
       "title": "Remote Access",
       "NIST CSF 2.1": ["PR.AA-03", "PR.AA-06"],
@@ -60,6 +91,14 @@
       "ISO 27001:2022": ["A.6.7", "A.8.1"],
       "PCI DSS v4.0.1": ["8.5", "11.4"],
       "SOC 2 TSC": ["CC6.6", "CC6.7"]
+    },
+    "AT-2": {
+      "title": "Literacy Training and Awareness",
+      "NIST CSF 2.1": ["PR.AT-01", "PR.AT-02"],
+      "CIS Controls v8.1": ["14.1", "14.2", "14.3"],
+      "ISO 27001:2022": ["A.6.3"],
+      "PCI DSS v4.0.1": ["12.6"],
+      "SOC 2 TSC": ["CC1.4", "CC2.2"]
     },
     "AU-2": {
       "title": "Event Logging",
@@ -69,6 +108,46 @@
       "PCI DSS v4.0.1": ["10.2"],
       "SOC 2 TSC": ["CC7.2"]
     },
+    "AU-3": {
+      "title": "Content of Audit Records",
+      "NIST CSF 2.1": ["DE.CM-01"],
+      "CIS Controls v8.1": ["8.5"],
+      "ISO 27001:2022": ["A.8.15"],
+      "PCI DSS v4.0.1": ["10.2.2"],
+      "SOC 2 TSC": ["CC7.2"]
+    },
+    "AU-6": {
+      "title": "Audit Record Review, Analysis, and Reporting",
+      "NIST CSF 2.1": ["DE.AE-02", "DE.AE-03"],
+      "CIS Controls v8.1": ["8.11"],
+      "ISO 27001:2022": ["A.8.15", "A.8.16"],
+      "PCI DSS v4.0.1": ["10.4"],
+      "SOC 2 TSC": ["CC7.2", "CC7.3"]
+    },
+    "AU-8": {
+      "title": "Time Stamps",
+      "NIST CSF 2.1": ["PR.PS-01"],
+      "CIS Controls v8.1": ["8.4"],
+      "ISO 27001:2022": ["A.8.17"],
+      "PCI DSS v4.0.1": ["10.6"],
+      "SOC 2 TSC": ["CC7.2"]
+    },
+    "AU-9": {
+      "title": "Protection of Audit Information",
+      "NIST CSF 2.1": ["PR.PS-01", "PR.DS-01"],
+      "CIS Controls v8.1": ["8.3"],
+      "ISO 27001:2022": ["A.8.15"],
+      "PCI DSS v4.0.1": ["10.3"],
+      "SOC 2 TSC": ["CC6.1", "CC7.2"]
+    },
+    "AU-11": {
+      "title": "Audit Record Retention",
+      "NIST CSF 2.1": ["PR.PS-01"],
+      "CIS Controls v8.1": ["8.10"],
+      "ISO 27001:2022": ["A.8.15"],
+      "PCI DSS v4.0.1": ["10.5.1"],
+      "SOC 2 TSC": ["CC7.2"]
+    },
     "AU-12": {
       "title": "Audit Record Generation",
       "NIST CSF 2.1": ["DE.CM-01", "DE.CM-09"],
@@ -76,6 +155,14 @@
       "ISO 27001:2022": ["A.8.15", "A.8.16"],
       "PCI DSS v4.0.1": ["10.2", "10.3"],
       "SOC 2 TSC": ["CC7.2"]
+    },
+    "CA-7": {
+      "title": "Continuous Monitoring",
+      "NIST CSF 2.1": ["DE.CM-01", "ID.IM-02"],
+      "CIS Controls v8.1": ["8.11", "13.11"],
+      "ISO 27001:2022": ["A.8.16"],
+      "PCI DSS v4.0.1": ["11.5", "12.4"],
+      "SOC 2 TSC": ["CC4.1", "CC7.2"]
     },
     "CM-2": {
       "title": "Baseline Configuration",
@@ -93,12 +180,36 @@
       "PCI DSS v4.0.1": ["2.2"],
       "SOC 2 TSC": ["CC7.1"]
     },
+    "CM-7": {
+      "title": "Least Functionality",
+      "NIST CSF 2.1": ["PR.PS-01"],
+      "CIS Controls v8.1": ["4.1", "4.4", "4.8"],
+      "ISO 27001:2022": ["A.8.9", "A.8.19"],
+      "PCI DSS v4.0.1": ["1.2", "2.2"],
+      "SOC 2 TSC": ["CC6.6", "CC7.1"]
+    },
+    "CM-8": {
+      "title": "System Component Inventory",
+      "NIST CSF 2.1": ["ID.AM-01", "ID.AM-02"],
+      "CIS Controls v8.1": ["1.1", "1.2", "2.1", "2.2"],
+      "ISO 27001:2022": ["A.5.9", "A.8.8"],
+      "PCI DSS v4.0.1": ["12.5.1"],
+      "SOC 2 TSC": ["CC6.1"]
+    },
     "CP-9": {
       "title": "System Backup",
       "NIST CSF 2.1": ["RC.RP-01", "PR.DS-11"],
       "CIS Controls v8.1": ["11.1", "11.2", "11.3", "11.5"],
       "ISO 27001:2022": ["A.8.13"],
       "PCI DSS v4.0.1": ["3.5"],
+      "SOC 2 TSC": ["A1.2", "A1.3"]
+    },
+    "CP-10": {
+      "title": "System Recovery and Reconstitution",
+      "NIST CSF 2.1": ["RC.RP-01"],
+      "CIS Controls v8.1": ["11.1", "11.4"],
+      "ISO 27001:2022": ["A.5.30", "A.8.13"],
+      "PCI DSS v4.0.1": ["12.10"],
       "SOC 2 TSC": ["A1.2", "A1.3"]
     },
     "IA-2": {
@@ -125,6 +236,22 @@
       "PCI DSS v4.0.1": ["12.10"],
       "SOC 2 TSC": ["CC7.3", "CC7.4"]
     },
+    "IR-5": {
+      "title": "Incident Monitoring",
+      "NIST CSF 2.1": ["RS.MA-01", "DE.AE-02"],
+      "CIS Controls v8.1": ["17.4"],
+      "ISO 27001:2022": ["A.5.25"],
+      "PCI DSS v4.0.1": ["12.10.5"],
+      "SOC 2 TSC": ["CC7.3"]
+    },
+    "IR-6": {
+      "title": "Incident Reporting",
+      "NIST CSF 2.1": ["RS.CO-02", "RS.CO-03"],
+      "CIS Controls v8.1": ["17.6"],
+      "ISO 27001:2022": ["A.5.26", "A.6.8"],
+      "PCI DSS v4.0.1": ["12.10.1"],
+      "SOC 2 TSC": ["CC2.3", "CC7.3"]
+    },
     "IR-8": {
       "title": "Incident Response Plan",
       "NIST CSF 2.1": ["RS.MA-01"],
@@ -132,6 +259,22 @@
       "ISO 27001:2022": ["A.5.24"],
       "PCI DSS v4.0.1": ["12.10"],
       "SOC 2 TSC": ["CC7.3"]
+    },
+    "PL-2": {
+      "title": "System Security and Privacy Plan",
+      "NIST CSF 2.1": ["GV.PO-01", "ID.IM-04"],
+      "CIS Controls v8.1": ["3.1"],
+      "ISO 27001:2022": ["A.5.1"],
+      "PCI DSS v4.0.1": ["12.1"],
+      "SOC 2 TSC": ["CC1.2", "CC2.2"]
+    },
+    "RA-3": {
+      "title": "Risk Assessment",
+      "NIST CSF 2.1": ["ID.RA-01", "ID.RA-04", "ID.RA-05"],
+      "CIS Controls v8.1": ["3.1"],
+      "ISO 27001:2022": ["A.5.7", "A.8.8"],
+      "PCI DSS v4.0.1": ["12.3.1"],
+      "SOC 2 TSC": ["CC3.1", "CC3.2"]
     },
     "RA-5": {
       "title": "Vulnerability Monitoring and Scanning",
@@ -141,13 +284,29 @@
       "PCI DSS v4.0.1": ["11.3"],
       "SOC 2 TSC": ["CC4.1", "CC7.1"]
     },
+    "SA-3": {
+      "title": "System Development Life Cycle",
+      "NIST CSF 2.1": ["PR.PS-06"],
+      "CIS Controls v8.1": ["16.1"],
+      "ISO 27001:2022": ["A.8.25"],
+      "PCI DSS v4.0.1": ["6.2.1"],
+      "SOC 2 TSC": ["CC8.1"]
+    },
     "SA-11": {
       "title": "Developer Testing and Evaluation",
       "NIST CSF 2.1": ["ID.RA-01", "PR.PS-06"],
       "CIS Controls v8.1": ["16.11", "16.12", "16.13"],
-      "ISO 27001:2022": ["A.8.28"],
+      "ISO 27001:2022": ["A.8.28", "A.8.29"],
       "PCI DSS v4.0.1": ["6.3.1"],
       "SOC 2 TSC": ["CC8.1"]
+    },
+    "SC-5": {
+      "title": "Denial-of-Service Protection",
+      "NIST CSF 2.1": ["PR.IR-04"],
+      "CIS Controls v8.1": ["13.10"],
+      "ISO 27001:2022": ["A.8.6"],
+      "PCI DSS v4.0.1": ["1.3"],
+      "SOC 2 TSC": ["A1.1"]
     },
     "SC-7": {
       "title": "Boundary Protection",
@@ -181,6 +340,14 @@
       "PCI DSS v4.0.1": ["3.5", "4.2"],
       "SOC 2 TSC": ["CC6.1", "CC6.7"]
     },
+    "SC-23": {
+      "title": "Session Authenticity",
+      "NIST CSF 2.1": ["PR.DS-02"],
+      "CIS Controls v8.1": ["3.10"],
+      "ISO 27001:2022": ["A.8.24", "A.8.26"],
+      "PCI DSS v4.0.1": ["4.2", "6.2.4"],
+      "SOC 2 TSC": ["CC6.7"]
+    },
     "SC-28": {
       "title": "Protection of Information at Rest",
       "NIST CSF 2.1": ["PR.DS-01"],
@@ -197,6 +364,14 @@
       "PCI DSS v4.0.1": ["6.3.3", "11.3"],
       "SOC 2 TSC": ["CC7.1"]
     },
+    "SI-3": {
+      "title": "Malicious Code Protection",
+      "NIST CSF 2.1": ["DE.CM-01", "PR.PS-05"],
+      "CIS Controls v8.1": ["10.1", "10.2", "10.5"],
+      "ISO 27001:2022": ["A.8.7"],
+      "PCI DSS v4.0.1": ["5.2", "5.3"],
+      "SOC 2 TSC": ["CC6.8"]
+    },
     "SI-4": {
       "title": "System Monitoring",
       "NIST CSF 2.1": ["DE.CM-01", "DE.CM-09"],
@@ -204,6 +379,14 @@
       "ISO 27001:2022": ["A.8.16"],
       "PCI DSS v4.0.1": ["10.4", "11.5"],
       "SOC 2 TSC": ["CC7.2", "CC7.3"]
+    },
+    "SI-7": {
+      "title": "Software, Firmware, and Information Integrity",
+      "NIST CSF 2.1": ["PR.DS-06", "DE.CM-09"],
+      "CIS Controls v8.1": ["3.14", "10.5"],
+      "ISO 27001:2022": ["A.8.7", "A.8.19"],
+      "PCI DSS v4.0.1": ["10.3.4", "11.5.2"],
+      "SOC 2 TSC": ["CC7.1"]
     },
     "SI-10": {
       "title": "Information Input Validation",
