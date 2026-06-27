@@ -653,6 +653,25 @@ with st.sidebar:
             help="Requires Trivy installed locally (see README).",
             label_visibility="collapsed",
         )
+        st.markdown('<div class="sidebar-label" style="margin-top:0.75rem">Live scan targets</div>', unsafe_allow_html=True)
+        cloud_target = st.text_input(
+            "Cloud account",
+            placeholder="Cloud posture, e.g. aws or aws:profile",
+            help="Runs Prowler against the account using your local cloud SDK credentials (read-only).",
+            label_visibility="collapsed",
+        )
+        image_ref = st.text_input(
+            "Container image",
+            placeholder="Container image, e.g. nginx:1.21",
+            help="Scans the image with `trivy image` for CVEs + misconfigurations.",
+            label_visibility="collapsed",
+        )
+        target_url = st.text_input(
+            "Web target URL",
+            placeholder="Web URL to DAST-scan, e.g. https://example.com",
+            help="Runs a Nuclei DAST scan. Only scan targets you are authorized to test.",
+            label_visibility="collapsed",
+        )
 
     st.markdown(
         '<div class="sidebar-section">'
@@ -729,6 +748,18 @@ def _build_artifacts() -> list[Artifact]:
     if codebase_path.strip():
         path = codebase_path.strip()
         artifacts.append(Artifact(kind="codebase", name=path, content=path))
+
+    if cloud_target.strip():
+        spec = cloud_target.strip()
+        artifacts.append(Artifact(kind="cloud_account", name=f"cloud:{spec}", content=spec))
+
+    if image_ref.strip():
+        ref = image_ref.strip()
+        artifacts.append(Artifact(kind="image_ref", name=ref, content=ref))
+
+    if target_url.strip():
+        url = target_url.strip()
+        artifacts.append(Artifact(kind="target_url", name=url, content=url))
 
     return artifacts
 

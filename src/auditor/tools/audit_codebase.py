@@ -217,6 +217,10 @@ def _run_trivy(scanned_path: str) -> list[Finding]:
             )
         ]
 
+    return _trivy_findings_from_data(data, scanned_path)
+
+
+def _trivy_findings_from_data(data: dict, scanned_path: str) -> list[Finding]:
     findings: list[Finding] = []
     for result in data.get("Results") or []:
         target = result.get("Target", "?")
@@ -225,6 +229,33 @@ def _run_trivy(scanned_path: str) -> list[Finding]:
         for mis in result.get("Misconfigurations") or []:
             findings.append(_misconfig_to_finding(mis, target, scanned_path))
     return findings
+
+
+def audit_image(image_ref: str) -> list[Finding]:
+    """Scan a container image with `trivy image` (CVEs + misconfigurations).
+
+    Reuses the same Trivy JSON parsing + KEV/EPSS/CVSS enrichment as the
+    filesystem scan, so a vulnerable base image is assessed exactly like a
+    vulnerable dependency manifest.
+    """
+    ref = image_ref.strip()
+    cmd = ["trivy", "image", "--scanners", "vuln,misconfig", "--format", "json",
+           "--quiet", "--severity", "HIGH,CRITICAL", ref]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    except FileNotFoundError:
+        return [_info("Trivy not installed", _TRIVY_INSTALL_HINT, _TRIVY_INSTALL_HINT, ref)]
+
+    if proc.returncode != 0 and not proc.stdout.strip():
+        stderr_tail = (proc.stderr or "").strip().splitlines()[-5:]
+        return [_info("Trivy image scan failed", "\n".join(stderr_tail) or f"exit {proc.returncode}",
+                      f"Re-run `trivy image {ref}` manually to diagnose.", ref)]
+    try:
+        data = json.loads(proc.stdout or "{}")
+    except json.JSONDecodeError as e:
+        return [_info("Trivy returned non-JSON output", f"{type(e).__name__}: {e}",
+                      "Check the installed Trivy version supports --format json.", ref)]
+    return _trivy_findings_from_data(data, ref)
 
 
 # ---- Bandit ----------------------------------------------------------------

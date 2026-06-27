@@ -6,7 +6,14 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 Severity = Literal["info", "low", "medium", "high", "critical"]
-ArtifactKind = Literal["text", "policy_pdf", "config", "log", "codebase"]
+ArtifactKind = Literal[
+    "text", "policy_pdf", "config", "log", "codebase",
+    # Live-scanning targets (Phase 2): assessed against a running environment
+    # rather than an uploaded file.
+    "cloud_account",  # cloud posture (Prowler) — content = "aws[:profile]" etc.
+    "image_ref",      # container image (Trivy image) — content = image reference
+    "target_url",     # web target (Nuclei DAST) — content = URL
+]
 
 # Where a finding came from. The scanner/heuristic sources are deterministic and
 # reproducible; the llm source is AI-assisted analysis and should be presented as

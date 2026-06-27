@@ -10,11 +10,13 @@ from auditor.enrichment.mappings import enrich_with_mappings
 from auditor.enrichment.mitre import enrich_findings
 from auditor.enrichment.risk import normalize_findings
 from auditor.models import Artifact, AuditScope, Finding
-from auditor.tools.audit_codebase import audit_codebase
+from auditor.tools.audit_cloud import audit_cloud
+from auditor.tools.audit_codebase import audit_codebase, audit_image
 from auditor.tools.audit_config import audit_config
 from auditor.tools.audit_logs import audit_logs
 from auditor.tools.audit_policy_pdf import audit_policy_text
 from auditor.tools.audit_text import audit_system_description
+from auditor.tools.audit_web import audit_web
 
 log = logging.getLogger(__name__)
 
@@ -30,6 +32,12 @@ def _audit_one(artifact: Artifact, frameworks: list[str] | None) -> list[Finding
         return audit_logs(artifact.content, frameworks=frameworks, source_artifact=artifact.name)
     if artifact.kind == "codebase":
         return audit_codebase(artifact.content)  # content holds the directory path
+    if artifact.kind == "cloud_account":
+        return audit_cloud(artifact.content)  # content holds "provider[:profile]"
+    if artifact.kind == "image_ref":
+        return audit_image(artifact.content)  # content holds the image reference
+    if artifact.kind == "target_url":
+        return audit_web(artifact.content)  # content holds the URL
     log.warning("Unknown artifact kind: %s", artifact.kind)
     return []
 

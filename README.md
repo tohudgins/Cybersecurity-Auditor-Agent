@@ -172,6 +172,9 @@ The importer is orientation-agnostic (detects the 800-53 side by ID shape) and o
 | `config` | `sshd_config`, `nginx.conf`, `Dockerfile` (hadolint), `*.tf` / Kubernetes YAML (Checkov) | `tools/audit_config.py` |
 | `log` | `auth.log`, syslog, access logs, JSON event logs — heuristics for brute force, post-brute-force compromise, web attacks (SQLi/XSS/traversal/cmd-injection), and log tampering | `tools/audit_logs.py` |
 | `codebase` | Local directory path; Trivy scans dependency CVEs + IaC/Dockerfile misconfigurations + Semgrep multi-language SAST + Bandit Python SAST + gitleaks secrets (regex fallback if gitleaks isn't installed) | `tools/audit_codebase.py` |
+| `cloud_account` | **Live cloud posture (CSPM).** A provider spec (`aws`, `aws:profile`, `gcp`, `azure`); runs Prowler against the account using your local read-only SDK credentials and maps FAIL findings to NIST controls | `tools/audit_cloud.py` |
+| `image_ref` | **Container image.** An image reference (`nginx:1.21`); `trivy image` for CVEs + misconfigurations, with the same KEV/EPSS/CVSS enrichment as a codebase scan | `tools/audit_codebase.py` |
+| `target_url` | **Live web target (DAST).** A URL; runs a Nuclei templated scan and maps results to NIST controls by tag. Only scan targets you are authorized to test | `tools/audit_web.py` |
 
 ---
 
@@ -310,6 +313,8 @@ pytest tests/test_audit_config.py   # single file
 | **[gitleaks](https://github.com/gitleaks/gitleaks)** | `codebase` (secrets) | `brew install gitleaks` / [releases](https://github.com/gitleaks/gitleaks/releases) — if missing, a built-in regex fallback covers AWS keys, OpenAI keys, GitHub tokens, hardcoded passwords, and embedded private keys. |
 | **[Checkov](https://www.checkov.io/)** | `config` (Terraform / K8s IaC) | `pip install checkov` |
 | **[hadolint](https://github.com/hadolint/hadolint)** | `config` (Dockerfile linting) | `brew install hadolint` / [releases](https://github.com/hadolint/hadolint/releases) — regex fallback if missing |
+| **[Prowler](https://github.com/prowler-cloud/prowler)** | `cloud_account` (live CSPM: AWS / GCP / Azure) | `pip install prowler` — uses your read-only cloud SDK credentials |
+| **[Nuclei](https://github.com/projectdiscovery/nuclei)** | `target_url` (live web DAST) | `brew install nuclei` / [releases](https://github.com/projectdiscovery/nuclei/releases) |
 
 If a scanner isn't on PATH, the corresponding tool emits an info-level finding with the install hint and falls back to either regex heuristics or a degraded mode — the demo still runs.
 
@@ -321,7 +326,8 @@ Stated plainly, because a GRC tool that overstates its rigor is worse than one t
 
 - **Mappings are informative, not authoritative.** The crosswalk is curated from the public OLIR/CIS/ISO/PCI/SOC 2 references and covers the control families this agent exercises (~40 anchor controls, ~35 CWEs) — not the full ~1,000-control 800-53 catalog. The OLIR importer can augment it from NIST's machine-readable exports, but a compliance decision should still be confirmed against the official source. ASVS references are at chapter/domain granularity so they survive ASVS minor revisions.
 - **LLM findings are assistive, not a substitute for a human assessor.** The deterministic scanners (Trivy, Semgrep, Bandit, gitleaks, Checkov, hadolint) and regex heuristics are the evidentiary backbone; the LLM layer adds narrative analysis and can produce false positives/negatives. Findings are meant to be triaged, not auto-accepted.
-- **Point-in-time, file/path-scoped.** The agent assesses the artifacts you give it; it doesn't do continuous control monitoring, evidence collection, or ticketing. The OSCAL export exists so results can feed a system that does.
+- **Point-in-time, on-demand.** The agent assesses what you point it at — uploaded artifacts *or* live targets (cloud account, container image, web URL) — at the moment you run it. It doesn't do continuous control monitoring, evidence collection, or ticketing; the OSCAL export exists so results can feed a system that does.
+- **Live scanning needs the prerequisites and your authorization.** Cloud posture (Prowler) requires read-only credentials in your local SDK config; web DAST (Nuclei) must only be pointed at systems you are permitted to test. Missing scanners degrade gracefully to an info finding rather than failing the run.
 - **Single-user, local-first.** Audit history is a local SQLite DB — no multi-tenant RBAC or shareable report links yet.
 
 ## Roadmap

@@ -58,10 +58,19 @@ _KIND_COVERAGE: dict[str, tuple[str, ...]] = {
         "CP-9", "CP-10", "AC-2", "AU-11",
     ),
     "text": ("AC-2", "AC-3", "IA-2", "SC-7", "RA-3", "PL-2"),
+    # Live-scanning targets (Phase 2).
+    "cloud_account": (
+        "AC-3", "AC-6", "IA-2", "IA-5", "AU-2", "AU-6", "CA-7",
+        "SC-7", "SC-8", "SC-12", "SC-13", "SC-28", "CM-6", "RA-5", "SI-4", "CP-9",
+    ),
+    "image_ref": ("RA-5", "SI-2", "SI-7", "CM-6"),
+    "target_url": ("SI-10", "SC-7", "SC-8", "SC-23", "AC-3", "IA-5"),
 }
 
 # Kinds whose checks actively execute (per SP 800-53A, "Test") vs inspect ("Examine").
-_TEST_KINDS = frozenset({"config", "log", "codebase"})
+_TEST_KINDS = frozenset(
+    {"config", "log", "codebase", "cloud_account", "image_ref", "target_url"}
+)
 
 _SEVERITY_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
 
