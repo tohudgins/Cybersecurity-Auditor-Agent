@@ -10,7 +10,7 @@ from auditor.agents.compliance_agent import compliance_node
 from auditor.agents.reporting_agent import reporting_node
 from auditor.agents.state import AuditorState
 from auditor.config import settings
-from auditor.planner import plan_expansion
+from auditor.planner import build_plan
 
 
 def supervisor_node(state: AuditorState) -> dict:
@@ -30,16 +30,18 @@ def planning_node(state: AuditorState) -> dict:
     artifacts = state.get("artifacts") or []
     if not settings.auto_expand_scope:
         return {}
-    expanded, notes = plan_expansion(
+    plan = build_plan(
         artifacts,
         allow_local=settings.allow_local_targets,
         trivy_available=shutil.which("trivy") is not None,
     )
     out: dict = {}
-    if notes:
-        out["plan_notes"] = notes
-    if len(expanded) != len(artifacts):
-        out["artifacts"] = expanded
+    if plan.notes:
+        out["plan_notes"] = plan.notes
+    if plan.recommendations:
+        out["recommendations"] = plan.recommendations
+    if len(plan.artifacts) != len(artifacts):
+        out["artifacts"] = plan.artifacts
     return out
 
 

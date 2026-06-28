@@ -7,6 +7,7 @@ from auditor.planner import (
     _images_from_compose,
     _is_compose_file,
     _iter_dockerfiles,
+    build_plan,
     plan_expansion,
 )
 
@@ -191,3 +192,54 @@ def test_plan_expansion_merges_dockerfile_and_compose_dedup(tmp_path):
     expanded, _ = plan_expansion(artifacts, allow_local=True, trivy_available=True)
     refs = sorted(a.content for a in expanded if a.kind == "image_ref")
     assert refs == ["python:3.12-slim", "redis:7"]
+
+
+# ── Terraform → cloud-audit recommendation (surfaced, never auto-run) ─────────
+
+
+def test_terraform_recommendation_is_surfaced_not_run(tmp_path):
+    (tmp_path / "main.tf").write_text(
+        'provider "aws" {\n  region = "us-east-1"\n}\n'
+        'resource "aws_s3_bucket" "b" {}\n'
+    )
+    plan = build_plan([_codebase(tmp_path)], allow_local=True, trivy_available=True)
+
+    # No live cloud target is auto-added — it's only recommended.
+    assert all(a.kind != "cloud_account" for a in plan.artifacts)
+    assert len(plan.recommendations) == 1
+    rec = plan.recommendations[0]
+    assert "AWS" in rec
+    assert "audit aws:" in rec
+    assert "Not run automatically" in rec
+
+
+def test_terraform_recommendation_detects_provider_by_resource_prefix(tmp_path):
+    # No explicit provider block — inferred from resource prefixes.
+    (tmp_path / "infra.tf").write_text('resource "google_storage_bucket" "b" {}\n')
+    plan = build_plan([_codebase(tmp_path)], allow_local=True, trivy_available=True)
+    assert plan.recommendations and "GCP" in plan.recommendations[0]
+    assert "audit gcp:" in plan.recommendations[0]
+
+
+def test_no_terraform_recommendation_when_cloud_already_in_scope(tmp_path):
+    (tmp_path / "main.tf").write_text('provider "aws" {}\n')
+    artifacts = [
+        _codebase(tmp_path),
+        Artifact(kind="cloud_account", name="cloud:aws", content="aws"),
+    ]
+    plan = build_plan(artifacts, allow_local=True, trivy_available=True)
+    assert plan.recommendations == []  # user already scanned the account
+
+
+def test_terraform_recommendation_skipped_when_local_disabled(tmp_path):
+    (tmp_path / "main.tf").write_text('provider "aws" {}\n')
+    plan = build_plan([_codebase(tmp_path)], allow_local=False, trivy_available=True)
+    assert plan.recommendations == []
+
+
+def test_terraform_recommendation_independent_of_trivy(tmp_path):
+    # Recommendation needs no scanner — it's advisory, not a run.
+    (tmp_path / "main.tf").write_text('provider "azurerm" {}\n')
+    plan = build_plan([_codebase(tmp_path)], allow_local=True, trivy_available=False)
+    assert plan.recommendations and "Azure" in plan.recommendations[0]
+    assert all(a.kind != "image_ref" for a in plan.artifacts)  # no expansion without Trivy

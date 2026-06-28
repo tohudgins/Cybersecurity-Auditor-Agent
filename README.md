@@ -104,15 +104,20 @@ Sample CVE finding (Trivy + KEV + EPSS):
             │                   base image)            │
             └───────────────┬───────────────────────────┘
                        ▼
-                reporting_node  ──►  Markdown report: audit plan + remediation
-                       │             diff vs last run + coverage table + control-
-                      END            assessment table + ranked findings
+                reporting_node  ──►  Markdown report: audit plan + recommended
+                       │             next steps + remediation diff vs last run +
+                      END            coverage + control-assessment + ranked findings
                                      (+ OSCAL Assessment Results & POA&M)
 ```
 
 LangGraph wiring lives in `src/auditor/agents/graph.py`. Shared `AuditorState` carries `messages`, `target_frameworks`, `artifacts`, `scope`, `findings`, `assessments`, `coverage`, `final_report`, `route`, `plan_notes`, and the run-to-run diff snapshot (`previous_findings`/`previous_run_at`). The supervisor sets `route="audit"` when any artifact is attached, else `"compliance"`; the reporting node short-circuits on the compliance path because the cited answer is already assembled.
 
-On the audit route, a **planning node** runs before the scanners: it inspects the targets and pulls adjacent attack surface into scope (today: the container images a codebase references — Dockerfile `FROM` base images **and** docker-compose `services.*.image` — each become a container-image scan), so coverage isn't limited to exactly what you named. Planning is deterministic (a parser, not an LLM guess — no latency, no hallucinated targets), bounded, and a clean no-op when its prerequisite scanner is absent; the artifacts it adds join the same concurrent batch.
+On the audit route, a **planning node** runs before the scanners and splits adjacent attack surface two ways by safety:
+
+- **Auto-expansions** — safe, local, read-only assessments are pulled into the *same* run. Today: the container images a codebase references (Dockerfile `FROM` base images **and** docker-compose `services.*.image`) each become a container-image scan, so coverage isn't limited to exactly what you named.
+- **Recommendations** — live, credentialed, or personal assessments are *surfaced, never run*. Today: a repo containing Terraform provisions live cloud infrastructure, so the agent **recommends** a read-only cloud audit (`audit aws:<profile>`, tailored to the detected provider) in a **Recommended Next Steps** section rather than launching a billable, credentialed account-wide scan on its own.
+
+Planning is deterministic (a parser, not an LLM guess — no latency, no hallucinated targets), bounded, and a clean no-op when its prerequisite scanner is absent; the artifacts it adds join the same concurrent batch.
 
 Each audit tool pairs regex heuristics (instant, deterministic) with an LLM call (nuanced reasoning), and returns the same `Finding` shape so the reporting agent renders everything uniformly. Independent artifacts and the four codebase scanners run concurrently in thread pools.
 
@@ -289,6 +294,7 @@ The agent shells out to real scanners, so it treats its own inputs as untrusted:
 - **Argument-injection hardening** — SSH host specs, container image references, and cloud profile names are validated and may not begin with `-`, so a value like `-oProxyCommand=…` can't be reinterpreted as a tool flag (a classic RCE vector); image refs are also passed after a `--` separator.
 - **Filesystem/OS gating** — `AUDITOR_ALLOW_LOCAL_TARGETS=false` disables codebase/host/chat-file targets for shared hosting; chat-referenced files are size-capped before being read.
 - **Read-only by design** — scanners are pointed at targets in read-only modes; cloud auditing uses your existing read-only SDK credentials, which the app never handles or stores.
+- **Auto-runs only safe, local, read-only scans** — adaptive scope planning expands a run on its own *only* for local, read-only assessments (e.g. scanning a referenced container image). Anything that touches a live account, host, or external service (a cloud-posture scan, a host audit, a web DAST) is **recommended, never auto-launched** — it requires your explicit instruction, authorization, and credentials.
 - **Graceful degradation** — a missing scanner becomes an info finding, never a crash.
 
 Only audit systems you are authorized to assess.

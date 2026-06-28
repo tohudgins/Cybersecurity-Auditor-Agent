@@ -187,6 +187,20 @@ def _render_plan(notes: list[str] | None) -> str:
     )
 
 
+def _render_recommendations(recommendations: list[str] | None) -> str:
+    """Render advisory next steps the agent surfaced but deliberately did not run."""
+    if not recommendations:
+        return ""
+    body = "\n".join(f"- {r}" for r in recommendations)
+    return (
+        "## Recommended Next Steps\n\n"
+        "_Adjacent assessments the agent did **not** run on its own because they "
+        "touch live, credentialed, or personal systems — run them yourself if "
+        "appropriate:_\n\n"
+        f"{body}\n"
+    )
+
+
 def _build_report(
     findings: list[Finding],
     frameworks: list[str] | None,
@@ -195,6 +209,7 @@ def _build_report(
     previous_findings: list[dict] | None = None,
     previous_run_at: str | None = None,
     plan_notes: list[str] | None = None,
+    recommendations: list[str] | None = None,
 ) -> str:
     sorted_findings = sorted(
         findings,
@@ -226,6 +241,9 @@ def _build_report(
     plan_md = _render_plan(plan_notes)
     plan_md = plan_md + "\n" if plan_md else ""
 
+    recommendations_md = _render_recommendations(recommendations)
+    recommendations_md = recommendations_md + "\n" if recommendations_md else ""
+
     remediation_md = ""
     if previous_findings is not None:
         diff = diff_findings(previous_findings, sorted_findings, previous_run_at)
@@ -242,6 +260,7 @@ def _build_report(
         "## Executive Summary\n\n"
         f"{summary}\n\n"
         f"{plan_md}"
+        f"{recommendations_md}"
         f"{remediation_md}"
         f"{coverage_md}"
         f"{assessment_md}"
@@ -262,10 +281,11 @@ def reporting_node(state: AuditorState) -> dict:
     previous_findings = state.get("previous_findings")
     previous_run_at = state.get("previous_run_at")
     plan_notes = state.get("plan_notes")
+    recommendations = state.get("recommendations")
     report = _build_report(
         findings, frameworks, assessments, coverage,
         previous_findings=previous_findings, previous_run_at=previous_run_at,
-        plan_notes=plan_notes,
+        plan_notes=plan_notes, recommendations=recommendations,
     )
     return {
         "final_report": report,

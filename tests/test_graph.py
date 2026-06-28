@@ -79,6 +79,35 @@ def test_planning_node_expands_codebase_scope_before_audit(monkeypatch, tmp_path
     assert "python:3.9-slim" in out["final_report"]
 
 
+def test_planning_node_recommends_cloud_audit_without_running_it(monkeypatch, tmp_path):
+    """Terraform in a repo surfaces a cloud-audit recommendation but never adds a
+    live cloud_account target to the run."""
+    (tmp_path / "main.tf").write_text('provider "aws" {}\nresource "aws_vpc" "v" {}\n')
+
+    seen = {}
+
+    def fake_audit(state):
+        seen["kinds"] = [a.kind for a in state.get("artifacts", [])]
+        return {"findings": []}
+
+    monkeypatch.setattr(graph_mod.shutil, "which", lambda _name: "/usr/bin/trivy")
+    monkeypatch.setattr(graph_mod.settings, "auto_expand_scope", True)
+    monkeypatch.setattr(graph_mod.settings, "allow_local_targets", True)
+    monkeypatch.setattr(graph_mod, "audit_node", fake_audit)
+
+    graph = graph_mod.build_graph()
+    out = graph.invoke(
+        {
+            "messages": [HumanMessage(content="audit my repo")],
+            "artifacts": [Artifact(kind="codebase", name=str(tmp_path), content=str(tmp_path))],
+        }
+    )
+
+    assert "cloud_account" not in seen["kinds"]  # NOT auto-run
+    assert "## Recommended Next Steps" in out["final_report"]
+    assert "audit aws:" in out["final_report"]
+
+
 def test_planning_node_disabled_leaves_scope_untouched(monkeypatch, tmp_path):
     (tmp_path / "Dockerfile").write_text("FROM python:3.9-slim")
 
