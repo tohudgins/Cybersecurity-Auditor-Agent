@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     allow_local_targets: bool = Field(default=True, alias="AUDITOR_ALLOW_LOCAL_TARGETS")
     # Max size (bytes) of a chat-referenced file the intake parser will read.
     max_intake_file_bytes: int = 5_000_000
+    # Adaptive scope planning: when True, the planning node may pull adjacent
+    # attack surface into scope (e.g. a codebase's Dockerfile base image → a
+    # container-image scan). Deterministic, bounded, and concurrent with the
+    # main scan, so it broadens coverage without serial cost. Set
+    # AUDITOR_AUTO_EXPAND_SCOPE=false to assess only the targets named.
+    auto_expand_scope: bool = Field(default=True, alias="AUDITOR_AUTO_EXPAND_SCOPE")
 
 
 settings = Settings()

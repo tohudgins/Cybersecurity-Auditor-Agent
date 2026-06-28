@@ -9,6 +9,7 @@ from langchain_openai import ChatOpenAI
 
 from auditor.agents.state import AuditorState
 from auditor.config import settings
+from auditor.diff import diff_findings, render_remediation_section
 from auditor.enrichment.risk import compute_risk_score
 from auditor.models import (
     ControlAssessment,
@@ -174,11 +175,26 @@ def _executive_summary(findings: list[Finding], frameworks: list[str] | None) ->
     )
 
 
+def _render_plan(notes: list[str] | None) -> str:
+    """Render the adaptive scope-planning notes as an 'Audit Plan' section."""
+    if not notes:
+        return ""
+    body = "\n".join(f"- {n}" for n in notes)
+    return (
+        "## Audit Plan\n\n"
+        "_The agent expanded the assessment scope beyond the targets you named:_\n\n"
+        f"{body}\n"
+    )
+
+
 def _build_report(
     findings: list[Finding],
     frameworks: list[str] | None,
     assessments: list[ControlAssessment] | None = None,
     coverage: CoverageSummary | None = None,
+    previous_findings: list[dict] | None = None,
+    previous_run_at: str | None = None,
+    plan_notes: list[str] | None = None,
 ) -> str:
     sorted_findings = sorted(
         findings,
@@ -207,6 +223,14 @@ def _build_report(
 
     findings_md = "\n".join(_render_finding(i + 1, f) for i, f in enumerate(sorted_findings)) or "_No findings._"
 
+    plan_md = _render_plan(plan_notes)
+    plan_md = plan_md + "\n" if plan_md else ""
+
+    remediation_md = ""
+    if previous_findings is not None:
+        diff = diff_findings(previous_findings, sorted_findings, previous_run_at)
+        remediation_md = render_remediation_section(diff) + "\n"
+
     coverage_md = _render_coverage(coverage) + "\n" if coverage else ""
     assessment_md = _render_assessment_detail(assessments) + "\n" if assessments else ""
 
@@ -217,6 +241,8 @@ def _build_report(
         f"{provenance_line}\n"
         "## Executive Summary\n\n"
         f"{summary}\n\n"
+        f"{plan_md}"
+        f"{remediation_md}"
         f"{coverage_md}"
         f"{assessment_md}"
         "## Findings\n\n"
@@ -233,7 +259,14 @@ def reporting_node(state: AuditorState) -> dict:
     frameworks = state.get("target_frameworks") or None
     assessments = state.get("assessments") or None
     coverage = state.get("coverage") or None
-    report = _build_report(findings, frameworks, assessments, coverage)
+    previous_findings = state.get("previous_findings")
+    previous_run_at = state.get("previous_run_at")
+    plan_notes = state.get("plan_notes")
+    report = _build_report(
+        findings, frameworks, assessments, coverage,
+        previous_findings=previous_findings, previous_run_at=previous_run_at,
+        plan_notes=plan_notes,
+    )
     return {
         "final_report": report,
         "messages": [AIMessage(content=report)],

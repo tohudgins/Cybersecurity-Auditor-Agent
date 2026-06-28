@@ -73,6 +73,15 @@ def _signature(f: Finding) -> tuple:
     return ("title", _normalize_title(f.title), f.source_artifact)
 
 
+def finding_signature(f: Finding) -> tuple:
+    """Public, stable identity for a finding.
+
+    Shared with the run-to-run diff layer (:mod:`auditor.diff`) so a finding is
+    matched across audits exactly the way de-duplication matches it within one.
+    """
+    return _signature(f)
+
+
 def deduplicate(findings: list[Finding]) -> list[Finding]:
     """Collapse findings that share a signature, keeping the highest-scoring one.
 

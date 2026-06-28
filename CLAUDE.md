@@ -51,22 +51,24 @@ pytest tests/test_audit_config.py::test_sshd_heuristics_flag_root_login_and_pass
                        │
             ┌──────────┴──────────┐
             ▼                     ▼
-     compliance_node          audit_node
-     (hybrid BM25 +           (per-kind audit tool → findings →
-      vector retrieval         enrichment: ATT&CK tagging + mapping
-      + cited LLM)             lookup → risk normalization:
-                               de-dup + 0-100 score + rank)
-            │                     │
-            └──────────┬──────────┘
+     compliance_node          planning_node ──► audit_node
+     (hybrid BM25 +           (adaptive scope:  (per-kind audit tool → findings →
+      vector retrieval         pull adjacent     enrichment: ATT&CK tagging + mapping
+      + cited LLM)             targets into       lookup → risk normalization:
+                               scope, e.g.        de-dup + 0-100 score + rank →
+                               Dockerfile base    control assessment + coverage)
+                               image → image scan)
+            │                                       │
+            └──────────────────┬────────────────────┘
                        ▼
-                reporting_node ──► Markdown report (compliance path
-                       │           short-circuits; answer is in final_report)
-                      END
+                reporting_node ──► Markdown report (audit plan + remediation diff +
+                       │           coverage + assessment + ranked findings; compliance
+                      END          path short-circuits — answer is in final_report)
 ```
 
-**LangGraph state** (`agents/state.py`): `messages` (uses `add_messages` reducer), `target_frameworks`, `artifacts`, `scope` (`AuditScope`), `findings`, `assessments` (`list[ControlAssessment]`), `coverage` (`CoverageSummary`), `final_report`, `route`.
+**LangGraph state** (`agents/state.py`): `messages` (uses `add_messages` reducer), `target_frameworks`, `artifacts`, `scope` (`AuditScope`), `findings`, `assessments` (`list[ControlAssessment]`), `coverage` (`CoverageSummary`), `final_report`, `route`, `plan_notes`, `previous_findings`/`previous_run_at` (run-to-run diff).
 
-**Routing**: supervisor sets `route="audit"` if any artifacts are attached, else `"compliance"`. The reporting node short-circuits when `route == "compliance"` because the cited answer is already in `final_report`.
+**Routing**: supervisor sets `route="audit"` if any artifacts are attached, else `"compliance"`. The audit route runs `planning_node` (adaptive scope expansion) before `audit_node`. The reporting node short-circuits when `route == "compliance"` because the cited answer is already in `final_report`.
 
 ## Module layout
 
@@ -107,15 +109,21 @@ pytest tests/test_audit_config.py::test_sshd_heuristics_flag_root_login_and_pass
 - Control-coverage assessment layer — turns findings into a per-control verdict. `assess_controls(findings, artifact_kinds, scope)` returns `(list[ControlAssessment], CoverageSummary)`. Each artifact kind declares which controls its checks exercise (`_KIND_COVERAGE`); a control with findings → `not-satisfied` (`partial` if worst severity ≤ low), a covered control with no findings → `satisfied`, anything else in the baseline → `not-assessed`. Method is `test` for executing scanners (config/log/codebase) and `examine` for inspection (policy/text), per SP 800-53A. Findings resolve to their NIST anchor directly or via `mapped_controls`. The default baseline is the curated crosswalk catalog (`mappings.catalog_control_ids()`) — no fabricated control list. Called in `audit_node` after `normalize_findings`; results flow to the reporting node and OSCAL export.
 
 ### `history.py`
-- SQLite-backed audit run history at `~/.cache/auditor/history.db`. Exposes `save_run()`, `list_runs(limit, offset)`, `count_runs()`, `get_run(id)`, `delete_run(id)`, `clear_all()`. Every audit run is persisted automatically after `reporting_node` produces a report; the Streamlit sidebar surfaces the 3 most recent + a "View all" page with pagination + bulk delete.
+- SQLite-backed audit run history at `~/.cache/auditor/history.db`. Exposes `save_run()`, `list_runs(limit, offset)`, `count_runs()`, `get_run(id)`, `delete_run(id)`, `clear_all()`, and `latest_run_for_target(target_key)`. Every audit run is persisted automatically after `reporting_node` produces a report; the Streamlit sidebar surfaces the 3 most recent + a "View all" page with pagination + bulk delete. Two columns (`target_key`, `findings_json`) power the run-to-run diff (see `diff.py`); `_init_schema` `ALTER TABLE`-migrates older DBs that predate them.
+
+### `planner.py`
+- Adaptive **scope planning** — "the agent decides what else to assess." `plan_expansion(artifacts, *, allow_local, trivy_available, max_images=3)` returns `(expanded_artifacts, plan_notes)`: for every `codebase` target it does a bounded, heavy-dir-pruned filesystem walk for Dockerfiles (`_iter_dockerfiles`), parses their `FROM` lines (`_base_images` — skips `scratch`, `${VAR}`-templated refs, and multi-stage `AS` aliases), and adds an `image_ref` artifact per discovered base image (deduped against in-scope images, bounded). **Deterministic by design** (no LLM call — faster, no hallucinated targets) and a **clean no-op** when Trivy is absent or `allow_local`/`auto_expand_scope` is off, so it never adds dead work. The added artifacts join the *same* concurrent audit batch, so expansion costs wall-clock `max(scan, image-pull)`, not their sum. Wired as `graph.planning_node`. Fixture-tested (`tests/test_planner.py`, plus graph integration in `tests/test_graph.py`).
+
+### `diff.py`
+- Run-to-run **remediation tracking** — the audit *lifecycle* layer. `target_key(artifacts)` is a stable, order-independent id for a target set; `fingerprint(finding)` reuses `risk.finding_signature` so "the same issue" matches across runs exactly as it dedupes within one. `serialize_findings()` produces the compact snapshot persisted in `history.findings_json`. `diff_findings(previous_snapshot, current_findings, previous_run_at)` classifies each finding as **resolved** (was open, now gone), **new**, **regressed** (still open, severity up), or **persisting**, and rolls up an open-issue posture delta. `render_remediation_section(diff)` renders the Markdown "Remediation Progress" section. Persistence stays in the UI layer (`app.py`), so the graph stays pure: `app.py` looks up `latest_run_for_target` and threads `previous_findings`/`previous_run_at` through the graph state; `reporting_node` renders the section only when that snapshot is present. Fixture-tested (`tests/test_diff.py`).
 
 ### `oscal/`
 - `exporter.py` — `to_oscal_assessment_results(findings, *, assessments=None, coverage=None)` returns OSCAL 1.1.2 Assessment Results JSON. Deterministic UUIDv5 for stable observation/finding IDs across runs. All enrichment fields surface as OSCAL `props`: `severity`, `risk-score`, `cvss-v3-base-score`, `cvss-v3-vector`, `epss-score`, `epss-percentile`, `cisa-kev`, `mitre-attack-technique`, `mapped-control` (with `class=<framework>`). When `assessments`/`coverage` are passed, the result gains a `reviewed-controls` block (per-control verdict via `control-status` props) and coverage props (`coverage-percent`, `controls-assessed`, etc.). `to_oscal_poam(findings)` returns an OSCAL Plan of Action & Milestones (one `poam-item` per non-info finding). Both signatures stay backward-compatible (extra args optional).
 
 ### `agents/`
-- `graph.py` — `AUDITOR_GRAPH` singleton, START → supervisor → conditional `{compliance | audit}` → reporting → END.
+- `graph.py` — `AUDITOR_GRAPH` singleton, START → supervisor → conditional `{compliance | planning → audit}` → reporting → END. `planning_node` lives here (thin wrapper over `planner.plan_expansion`, gated on `settings.auto_expand_scope` + `shutil.which("trivy")`); it sets `plan_notes` and, when it expands scope, overwrites `artifacts` so `audit_node` dispatches the broadened set.
 - `audit_agent.py` — dispatches each `Artifact` to its tool (concurrently, via a `ThreadPoolExecutor`, since artifacts are independent and I/O-bound; order preserved by reading futures in submission order, results re-ranked downstream), then calls `enrich_findings()` (ATT&CK), `enrich_with_mappings()` (cross-framework), `normalize_findings()` (de-dup + risk score + rank), and finally `assess_controls()` (per-control verdict + coverage). Returns `{findings, assessments, coverage}`. Per-artifact crashes are isolated into info findings via `_audit_one_safe`.
-- `reporting_agent.py` — renders the report as Markdown: an evidence-basis line (deterministic vs AI-assisted counts), a **Control Coverage** table, a **Control Assessment** table (per-control status + method), then findings ordered by `risk_score` (desc). Per-finding lines: KEV badge, severity badge, risk score, mapped control, CVSS, EPSS, MITRE ATT&CK, cross-framework, detection source (scanner/heuristic/llm), source artifact, evidence, recommendation. Executive summary uses `gpt-5-mini` (fast_model) at `settings.audit_reasoning_effort`.
+- `reporting_agent.py` — renders the report as Markdown: an evidence-basis line (deterministic vs AI-assisted counts), an optional **Audit Plan** section (adaptive scope notes from `planning_node`, rendered when `plan_notes` is set), an optional **Remediation Progress** section (run-to-run diff, rendered only when the state carries a prior-run snapshot — see `diff.py`), a **Control Coverage** table, a **Control Assessment** table (per-control status + method), then findings ordered by `risk_score` (desc). Per-finding lines: KEV badge, severity badge, risk score, mapped control, CVSS, EPSS, MITRE ATT&CK, cross-framework, detection source (scanner/heuristic/llm), source artifact, evidence, recommendation. Executive summary uses `gpt-5-mini` (fast_model) at `settings.audit_reasoning_effort`.
 
 ## Streamlit UI flow
 

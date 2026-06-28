@@ -27,3 +27,11 @@ class AuditorState(TypedDict, total=False):
     coverage: CoverageSummary
     final_report: str
     route: str  # "compliance" or "audit"; set by the supervisor
+    # Adaptive scope-planning notes (set by the planning node) describing any
+    # adjacent targets pulled into scope; rendered as the report's "Audit Plan".
+    plan_notes: list[str]
+    # Run-to-run remediation diff (optional). The UI layer looks up the prior run
+    # of the same target and hands its serialized finding snapshot back in here;
+    # the reporting node renders a "Remediation Progress" section when present.
+    previous_findings: list[dict]
+    previous_run_at: str

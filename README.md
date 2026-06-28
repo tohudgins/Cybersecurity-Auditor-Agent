@@ -12,7 +12,7 @@
 A local Streamlit app that puts a cybersecurity GRC analyst behind a chat box. You **talk to it** — ask a compliance question, tell it what to audit, then dig into the results. Two modes:
 
 - **Compliance Q&A** — cited answers grounded in the indexed framework corpus (PDFs + GitHub markdown). Hybrid BM25 + vector retrieval routes exact control-ID queries (`AC-2`, `A01:2025`, `API1:2023`) directly to the matching control.
-- **System auditing** — just say what to scan: `audit ~/myrepo`, `scan https://example.com`, `audit aws:prod`, `image:nginx:1.21`, `audit this machine` (or attach files / use the sidebar). The agent detects the target, runs the right tools (regex heuristics + Trivy, Semgrep, Bandit, gitleaks, Checkov, hadolint, Prowler, Nuclei, Lynis) and LLM analysis, then returns a report that leads with a **control-coverage assessment** (per-control Satisfied / Not Satisfied / Not Assessed with the assessment method) — not just a findings list — ranked by risk and tied to framework controls. Afterward you can **ask follow-ups in plain language** ("explain finding 3", "how do I fix the SQL injection?", "which controls failed?"), answered against the report and the framework corpus.
+- **System auditing** — just say what to scan: `audit ~/myrepo`, `scan https://example.com`, `audit aws:prod`, `image:nginx:1.21`, `audit this machine` (or attach files / use the sidebar). The agent detects the target, **plans the scope** (pulling in adjacent attack surface — e.g. it spots a Dockerfile in your repo and also scans the base image for inherited OS-package CVEs), runs the right tools (regex heuristics + Trivy, Semgrep, Bandit, gitleaks, Checkov, hadolint, Prowler, Nuclei, Lynis) and LLM analysis, then returns a report that leads with a **control-coverage assessment** (per-control Satisfied / Not Satisfied / Not Assessed with the assessment method) — not just a findings list — ranked by risk and tied to framework controls. Re-audit the same target and it shows a **remediation diff** (what's fixed / new / regressed since last run). Afterward you can **ask follow-ups in plain language** ("explain finding 3", "how do I fix the SQL injection?", "which controls failed?"), answered against the report and the framework corpus.
 
 Unlike a bare scanner, it assesses controls the way an assessor does: it reports what passed, what failed, and — honestly — what went **unassessed** because no artifact exercised it, with a coverage percentage. Findings are separated into **deterministic** (scanner/heuristic) vs **AI-assisted** evidence, and results export as both OSCAL Assessment Results and an OSCAL POA&M.
 
@@ -46,7 +46,8 @@ Every finding is enriched with industry-standard context before rendering:
 | **Cross-framework mappings** | Curated crosswalk + NIST OLIR/CPRT importer | **Bidirectional** resolution across NIST 800-53, CSF 2.1, CIS v8.1, ISO 27001:2022, PCI DSS v4.0.1, SOC 2 TSC ([`data/mappings/control_mappings.json`](data/mappings/control_mappings.json)). A finding anchored on *any* of those frameworks resolves to all the others. SAST findings (Semgrep/Bandit) cross a **CWE → OWASP ASVS 5.0 → NIST** bridge ([`cwe_mappings.json`](data/mappings/cwe_mappings.json)) so a `CWE-89` SQLi finding inherits the full control crosswalk. |
 | **Control assessment** | SP 800-53A model | Per-control verdict (Satisfied / Not Satisfied / Partial / Not Assessed) + method (Examine / Test) + a coverage % over the selected baseline. Converts findings into an assessment. |
 | **OSCAL export** | NIST [OSCAL 1.1.2](https://pages.nist.gov/OSCAL/reference/latest/assessment-results/) | Every run downloadable as **Assessment Results** JSON (with `reviewed-controls` + coverage props) and an **OSCAL POA&M** (open findings as remediation items) — FedRAMP / Trestle / RegScale-ingestible. All enrichment fields surface as OSCAL `props`. |
-| **Audit history** | Local SQLite at `~/.cache/auditor/history.db` | Every completed run is persisted with its report + OSCAL JSON. Sidebar shows the 3 most recent; "View all" opens a paged browser with per-row delete and confirmed bulk clear. |
+| **Remediation tracking** | Run-to-run diff over local history | Re-audit the same target and the report leads with a **Remediation Progress** section: what's **resolved**, **newly introduced**, **regressed** (severity up), or **persisting** since the last run, plus an open-issue posture delta (`open issues 7 → 4 ⬇`). Findings are matched across runs by the same signature de-duplication uses within a run, so the lifecycle — assess → remediate → re-assess → prove progress — is captured, not just a point-in-time snapshot. |
+| **Audit history** | Local SQLite at `~/.cache/auditor/history.db` | Every completed run is persisted with its report + OSCAL JSON + a finding snapshot (for the diff above). Sidebar shows the 3 most recent; "View all" opens a paged browser with per-row delete and confirmed bulk clear. |
 
 ---
 
@@ -92,23 +93,30 @@ Sample CVE finding (Trivy + KEV + EPSS):
    user input → │  supervisor  │  routes on whether artifacts are attached
                 └──────┬───────┘
                        │
-            ┌──────────┴──────────┐
-            ▼                     ▼
-     compliance_node          audit_node
-     (hybrid BM25+vector       (per-kind audit tool → findings →
-      retrieval + cited LLM    enrich with KEV, EPSS, ATT&CK,
-      synthesis)               cross-framework mappings)
-            │                     │
-            └──────────┬──────────┘
+            ┌──────────┴───────────────┐
+            ▼                          ▼
+     compliance_node          planning_node → audit_node
+     (hybrid BM25+vector       (adaptive       (per-kind audit tool, run concurrently →
+      retrieval + cited LLM     scope:           findings → enrich: ATT&CK tagging + KEV/EPSS
+      synthesis)                pull adjacent    + cross-framework mappings → normalize:
+            │                   targets in,      de-dup + 0–100 risk score + rank →
+            │                   e.g. Dockerfile  assess: per-control verdict + coverage %)
+            │                   base image)            │
+            └───────────────┬───────────────────────────┘
                        ▼
-                reporting_node  ──►  Markdown report (+ OSCAL JSON export)
-                       │
-                      END
+                reporting_node  ──►  Markdown report: audit plan + remediation
+                       │             diff vs last run + coverage table + control-
+                      END            assessment table + ranked findings
+                                     (+ OSCAL Assessment Results & POA&M)
 ```
 
-LangGraph wiring lives in `src/auditor/agents/graph.py`. Shared `AuditorState` carries `messages`, `target_frameworks`, `artifacts`, `findings`, `final_report`, and `route`.
+LangGraph wiring lives in `src/auditor/agents/graph.py`. Shared `AuditorState` carries `messages`, `target_frameworks`, `artifacts`, `scope`, `findings`, `assessments`, `coverage`, `final_report`, `route`, `plan_notes`, and the run-to-run diff snapshot (`previous_findings`/`previous_run_at`). The supervisor sets `route="audit"` when any artifact is attached, else `"compliance"`; the reporting node short-circuits on the compliance path because the cited answer is already assembled.
 
-Each audit tool pairs regex heuristics (instant, deterministic) with an LLM call (nuanced reasoning), and returns the same `Finding` shape so the reporting agent renders everything uniformly.
+On the audit route, a **planning node** runs before the scanners: it inspects the targets and pulls adjacent attack surface into scope (today: a codebase's Dockerfile base image → a container-image scan), so coverage isn't limited to exactly what you named. Planning is deterministic (a parser, not an LLM guess — no latency, no hallucinated targets), bounded, and a clean no-op when its prerequisite scanner is absent; the artifacts it adds join the same concurrent batch.
+
+Each audit tool pairs regex heuristics (instant, deterministic) with an LLM call (nuanced reasoning), and returns the same `Finding` shape so the reporting agent renders everything uniformly. Independent artifacts and the four codebase scanners run concurrently in thread pools.
+
+**A third path bypasses the graph entirely:** once an audit has run, a follow-up message with no new targets (`"explain finding 3"`, `"which controls failed?"`) is answered by `stream_followup_answer()`, grounded in the prior report plus retrieved framework excerpts — so you can interrogate results conversationally without re-running the scan.
 
 ---
 
@@ -304,12 +312,16 @@ Only audit systems you are authorized to assess.
 ├── src/auditor/
 │   ├── config.py                   # Settings (paths, model names, k)
 │   ├── models.py                   # Finding, Artifact
+│   ├── intake.py                   # NL target detection from chat (parse_targets)
+│   ├── planner.py                  # Adaptive scope planning (Dockerfile → image)
+│   ├── assessment.py               # Findings → per-control verdict + coverage
+│   ├── diff.py                     # Run-to-run remediation diff (lifecycle)
 │   ├── history.py                  # SQLite audit run history
 │   ├── ingest/                     # PDF + markdown loader + GitHub fetcher
 │   ├── retrieval/                  # Hybrid BM25 + vector retrieval (RRF fusion)
 │   ├── tools/                      # compliance_qa (sync + streaming), framework_summary, audit_*
 │   ├── enrichment/                 # CISA KEV, EPSS, MITRE ATT&CK (curated + STIX), control mappings
-│   ├── oscal/                      # NIST OSCAL Assessment Results exporter
+│   ├── oscal/                      # NIST OSCAL Assessment Results + POA&M exporter
 │   ├── prompts/                    # PromptTemplates kept separate from logic
 │   └── agents/                     # supervisor, compliance, audit, reporting + graph
 └── tests/                          # pytest (LLM + retriever + KEV/EPSS/STIX all stubbed)
@@ -363,7 +375,7 @@ Stated plainly, because a GRC tool that overstates its rigor is worse than one t
 
 - **Mappings are informative, not authoritative.** The crosswalk is curated from the public OLIR/CIS/ISO/PCI/SOC 2 references and covers the control families this agent exercises (~40 anchor controls, ~35 CWEs) — not the full ~1,000-control 800-53 catalog. The OLIR importer can augment it from NIST's machine-readable exports, but a compliance decision should still be confirmed against the official source. ASVS references are at chapter/domain granularity so they survive ASVS minor revisions.
 - **LLM findings are assistive, not a substitute for a human assessor.** The deterministic scanners (Trivy, Semgrep, Bandit, gitleaks, Checkov, hadolint) and regex heuristics are the evidentiary backbone; the LLM layer adds narrative analysis and can produce false positives/negatives. Findings are meant to be triaged, not auto-accepted.
-- **Point-in-time, on-demand.** The agent assesses what you point it at — uploaded artifacts *or* live targets (cloud account, container image, web URL) — at the moment you run it. It doesn't do continuous control monitoring, evidence collection, or ticketing; the OSCAL export exists so results can feed a system that does.
+- **On-demand, not continuous.** The agent assesses what you point it at — uploaded artifacts *or* live targets (cloud account, container image, web URL) — at the moment you run it. Re-auditing the same target produces a run-to-run **remediation diff** (resolved / new / regressed / persisting) so you can track posture over time, but it doesn't run on a schedule or do unattended evidence collection / ticketing; the OSCAL export exists so results can feed a system that does.
 - **Live scanning needs the prerequisites and your authorization.** Cloud posture (Prowler) requires read-only credentials in your local SDK config; web DAST (Nuclei) must only be pointed at systems you are permitted to test; remote host audits (Lynis) need SSH access and Lynis installed on the target. Missing scanners degrade gracefully to an info finding rather than failing the run.
 - **Chat target detection is heuristic.** Plain-language targeting (`audit aws:prod`) is best-effort and gated on an audit verb to avoid hijacking compliance questions; the explicit `path:`/`url:`/`image:`/`cloud:`/`host:` prefixes are the deterministic path.
 - **Single-user, local-first.** Audit history is a local SQLite DB — no multi-tenant RBAC or shareable report links yet.

@@ -35,10 +35,17 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             total       INTEGER NOT NULL,
             severities  TEXT    NOT NULL,   -- JSON {"critical":1,"high":2,...}
             report_md   TEXT    NOT NULL,
-            oscal_json  TEXT                -- may be NULL for compliance-only runs
+            oscal_json  TEXT,               -- may be NULL for compliance-only runs
+            target_key  TEXT,               -- stable id of the assessed target set
+            findings_json TEXT              -- compact finding snapshot for run-to-run diff
         )
         """
     )
+    # Migrate older databases that predate the lifecycle columns.
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(audit_runs)")}
+    for col in ("target_key", "findings_json"):
+        if col not in existing:
+            conn.execute(f"ALTER TABLE audit_runs ADD COLUMN {col} TEXT")
     conn.commit()
 
 
@@ -51,13 +58,16 @@ def save_run(
     severities: dict[str, int],
     report_md: str,
     oscal_json: str | None = None,
+    target_key: str | None = None,
+    findings_json: str | None = None,
 ) -> int:
     """Persist a completed audit run.  Returns the new row id."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     with _connect() as conn:
         cur = conn.execute(
-            "INSERT INTO audit_runs (timestamp, artifacts, total, severities, report_md, oscal_json)"
-            " VALUES (?,?,?,?,?,?)",
+            "INSERT INTO audit_runs"
+            " (timestamp, artifacts, total, severities, report_md, oscal_json, target_key, findings_json)"
+            " VALUES (?,?,?,?,?,?,?,?)",
             (
                 ts,
                 json.dumps(artifact_names),
@@ -65,9 +75,30 @@ def save_run(
                 json.dumps(severities),
                 report_md,
                 oscal_json,
+                target_key,
+                findings_json,
             ),
         )
         return cur.lastrowid  # type: ignore[return-value]
+
+
+def latest_run_for_target(target_key: str) -> dict | None:
+    """Return the most recent prior run that assessed the same target set.
+
+    Used by the run-to-run remediation diff: ``findings_json`` is the snapshot we
+    compare the current run against. Returns ``None`` when this is a target's
+    first audit.
+    """
+    if not target_key:
+        return None
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT id, timestamp, findings_json FROM audit_runs"
+            " WHERE target_key=? AND findings_json IS NOT NULL"
+            " ORDER BY id DESC LIMIT 1",
+            (target_key,),
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def list_runs(limit: int = 20, offset: int = 0) -> list[dict]:

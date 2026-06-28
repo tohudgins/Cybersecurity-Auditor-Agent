@@ -21,6 +21,7 @@ from langchain_core.messages import AIMessage, HumanMessage  # noqa: E402
 
 from auditor import history as audit_history  # noqa: E402
 from auditor.agents.graph import AUDITOR_GRAPH  # noqa: E402
+from auditor.diff import serialize_findings, target_key  # noqa: E402
 from auditor.ingest.pdf_loader import FRAMEWORK_NAMES  # noqa: E402
 from auditor.intake import parse_targets  # noqa: E402
 from auditor.models import Artifact  # noqa: E402
@@ -801,10 +802,11 @@ def _render_markdown_with_pills(md: str) -> str:
 
 # ── Node labels shown inside st.status during audit runs ────────────────────
 _AUDIT_NODE_LABELS: dict[str, str] = {
-    "supervisor":       "🔍 Routing request…",
-    "audit_node":       "🔬 Running scanners and LLM analysis…",
-    "compliance_node":  "📚 Searching frameworks…",
-    "reporting_node":   "📝 Writing report…",
+    "supervisor":  "🔍 Routing request…",
+    "planning":    "🗺️ Planning scope (adjacent targets)…",
+    "audit":       "🔬 Running scanners and LLM analysis…",
+    "compliance":  "📚 Searching frameworks…",
+    "reporting":   "📝 Writing report…",
 }
 
 
@@ -1033,11 +1035,21 @@ if prompt:
 
         # ── Audit path — graph with step-by-step progress ─────────────────
         else:
+            # Run-to-run lifecycle: find the previous audit of this same target set
+            # so the report can show what was resolved / introduced / regressed.
+            tkey = target_key(artifacts)
+            prior_run = audit_history.latest_run_for_target(tkey)
             inputs = {
                 "messages": st.session_state.messages,
                 "target_frameworks": target_frameworks,
                 "artifacts": artifacts,
             }
+            if prior_run and prior_run.get("findings_json"):
+                try:
+                    inputs["previous_findings"] = json.loads(prior_run["findings_json"])
+                    inputs["previous_run_at"] = prior_run.get("timestamp")
+                except (ValueError, TypeError):
+                    pass
             final_report: str | None = None
             findings = []
             assessments = []
@@ -1095,7 +1107,8 @@ if prompt:
                         help="NIST OSCAL 1.1.2 Plan of Action & Milestones — open findings as remediation items.",
                     )
 
-                # Persist the run to history
+                # Persist the run to history, including a finding snapshot keyed by
+                # target so the *next* audit of this target can diff against it.
                 sev_counts = dict(Counter(f.severity for f in findings))
                 artifact_names = [a.name for a in artifacts]
                 audit_history.save_run(
@@ -1104,4 +1117,6 @@ if prompt:
                     severities=sev_counts,
                     report_md=answer,
                     oscal_json=oscal_str,
+                    target_key=target_key(artifacts),
+                    findings_json=json.dumps(serialize_findings(findings)),
                 )

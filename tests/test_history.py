@@ -135,3 +135,34 @@ def test_clear_all(tmp_db):
 def test_clear_all_when_empty(tmp_db):
     """Clearing an already-empty table is a no-op that returns 0."""
     assert history_mod.clear_all() == 0
+
+
+def test_latest_run_for_target_matches_same_target(tmp_db):
+    history_mod.save_run(
+        ["/repo"], 2, {"high": 2}, "old report",
+        target_key="abc123", findings_json='[{"fp":"x"}]',
+    )
+    history_mod.save_run(
+        ["/repo"], 1, {"high": 1}, "new report",
+        target_key="abc123", findings_json='[{"fp":"y"}]',
+    )
+    # An unrelated target shouldn't be returned.
+    history_mod.save_run(
+        ["/other"], 5, {"critical": 5}, "other report",
+        target_key="zzz999", findings_json='[{"fp":"z"}]',
+    )
+    latest = history_mod.latest_run_for_target("abc123")
+    assert latest is not None
+    assert latest["findings_json"] == '[{"fp":"y"}]'  # newest of the matching target
+
+
+def test_latest_run_for_target_none_when_no_prior(tmp_db):
+    assert history_mod.latest_run_for_target("never-seen") is None
+    assert history_mod.latest_run_for_target("") is None
+
+
+def test_latest_run_ignores_runs_without_snapshot(tmp_db):
+    history_mod.save_run(
+        ["/repo"], 0, {}, "no snapshot", target_key="t1", findings_json=None,
+    )
+    assert history_mod.latest_run_for_target("t1") is None
