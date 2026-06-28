@@ -25,6 +25,8 @@ import os
 import re
 from pathlib import Path
 
+import yaml
+
 from auditor.models import Artifact
 
 # Directories that never contain a project Dockerfile worth scanning and would
@@ -36,20 +38,32 @@ _SKIP_DIRS = frozenset({
 })
 
 _FROM_RE = re.compile(r"^\s*FROM\s+(\S+)(?:\s+AS\s+(\S+))?", re.IGNORECASE | re.MULTILINE)
+_COMPOSE_NAME_RE = re.compile(r"^(docker-compose|compose)(\.[\w.-]+)?\.ya?ml$", re.IGNORECASE)
 
 
 def _is_dockerfile(name: str) -> bool:
     return name == "Dockerfile" or name.startswith("Dockerfile.") or name.endswith(".Dockerfile")
 
 
-def _iter_dockerfiles(root: str | Path, *, max_files: int = 25, max_depth: int = 6) -> list[Path]:
-    """Bounded walk for Dockerfiles under ``root`` (or ``root`` itself)."""
+def _is_compose_file(name: str) -> bool:
+    return bool(_COMPOSE_NAME_RE.match(name))
+
+
+def _discover_build_files(
+    root: str | Path, *, max_files: int = 30, max_depth: int = 6
+) -> tuple[list[Path], list[Path]]:
+    """One bounded, heavy-dir-pruned walk → ``(dockerfiles, compose_files)``."""
     root = Path(root)
-    found: list[Path] = []
+    dockerfiles: list[Path] = []
+    compose_files: list[Path] = []
     if not root.exists():
-        return found
+        return dockerfiles, compose_files
     if root.is_file():
-        return [root] if _is_dockerfile(root.name) else []
+        if _is_dockerfile(root.name):
+            dockerfiles.append(root)
+        elif _is_compose_file(root.name):
+            compose_files.append(root)
+        return dockerfiles, compose_files
 
     root_depth = len(root.parts)
     for dirpath, dirnames, filenames in os.walk(root):
@@ -60,10 +74,17 @@ def _iter_dockerfiles(root: str | Path, *, max_files: int = 25, max_depth: int =
             dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
         for fn in filenames:
             if _is_dockerfile(fn):
-                found.append(Path(dirpath) / fn)
-                if len(found) >= max_files:
-                    return found
-    return found
+                dockerfiles.append(Path(dirpath) / fn)
+            elif _is_compose_file(fn):
+                compose_files.append(Path(dirpath) / fn)
+            if len(dockerfiles) + len(compose_files) >= max_files:
+                return dockerfiles, compose_files
+    return dockerfiles, compose_files
+
+
+def _iter_dockerfiles(root: str | Path, *, max_files: int = 25, max_depth: int = 6) -> list[Path]:
+    """Bounded walk for Dockerfiles under ``root`` (or ``root`` itself)."""
+    return _discover_build_files(root, max_files=max_files, max_depth=max_depth)[0]
 
 
 def _base_images(dockerfile_text: str) -> list[str]:
@@ -90,6 +111,85 @@ def _base_images(dockerfile_text: str) -> list[str]:
     return images
 
 
+def _images_from_compose(compose_text: str) -> list[str]:
+    """Extract ``services.*.image`` refs from a docker-compose file, in order.
+
+    Uses ``yaml.safe_load`` (never ``load`` — no arbitrary object construction).
+    Skips variable-interpolated refs (``${TAG}``) and build-only services (those
+    have no ``image:`` and are covered by Dockerfile discovery). Malformed YAML
+    degrades to an empty list rather than raising.
+    """
+    try:
+        docs = list(yaml.safe_load_all(compose_text))
+    except yaml.YAMLError:
+        return []
+    images: list[str] = []
+    seen: set[str] = set()
+    for doc in docs:
+        if not isinstance(doc, dict):
+            continue
+        services = doc.get("services")
+        if not isinstance(services, dict):
+            continue
+        for svc in services.values():
+            if not isinstance(svc, dict):
+                continue
+            img = svc.get("image")
+            if not isinstance(img, str):
+                continue
+            img = img.strip()
+            if not img or "$" in img or img.startswith("-") or img in seen:
+                continue
+            seen.add(img)
+            images.append(img)
+    return images
+
+
+# Per-source phrasing for the audit-plan note, so the rationale is explainable.
+_SOURCE_NOTE = {
+    "dockerfile": (
+        "detected base image `{img}` in a Dockerfile → added a container-image scan "
+        "(catches inherited OS-package CVEs a source-tree scan can't see)"
+    ),
+    "compose": (
+        "detected image `{img}` referenced in docker-compose → added a container-image "
+        "scan (assesses the deployed image's CVEs + misconfigurations)"
+    ),
+}
+
+
+def _discover_image_targets(codebase_path: str | Path) -> list[tuple[str, str]]:
+    """Return ordered, de-duplicated ``(image_ref, source)`` pairs for a codebase.
+
+    Source is ``"dockerfile"`` or ``"compose"``; Dockerfile bases come first. A
+    single bounded filesystem walk feeds both discoverers.
+    """
+    dockerfiles, compose_files = _discover_build_files(codebase_path)
+    targets: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    def _add(image: str, source: str) -> None:
+        if image not in seen:
+            seen.add(image)
+            targets.append((image, source))
+
+    for df in dockerfiles:
+        try:
+            text = df.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for img in _base_images(text):
+            _add(img, "dockerfile")
+    for cf in compose_files:
+        try:
+            text = cf.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for img in _images_from_compose(text):
+            _add(img, "compose")
+    return targets
+
+
 def plan_expansion(
     artifacts: list[Artifact],
     *,
@@ -99,9 +199,10 @@ def plan_expansion(
 ) -> tuple[list[Artifact], list[str]]:
     """Return ``(expanded_artifacts, plan_notes)``.
 
-    For every codebase target, discover container base images and add an
-    ``image_ref`` artifact for each (bounded by ``max_images``). A clean no-op
-    when local targets are disabled or Trivy isn't installed.
+    For every codebase target, discover container images referenced by its
+    Dockerfiles and docker-compose files and add an ``image_ref`` artifact for
+    each (bounded by ``max_images``). A clean no-op when local targets are
+    disabled or Trivy isn't installed.
     """
     notes: list[str] = []
     if not (allow_local and trivy_available):
@@ -113,29 +214,19 @@ def plan_expansion(
     for a in artifacts:
         if a.kind != "codebase":
             continue
-        discovered: list[str] = []
-        for df in _iter_dockerfiles(a.content):
-            try:
-                text = df.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            for img in _base_images(text):
-                if img not in in_scope_images and img not in discovered:
-                    discovered.append(img)
-
-        for img in discovered[:max_images]:
+        discovered = [
+            (img, src) for img, src in _discover_image_targets(a.content)
+            if img not in in_scope_images
+        ]
+        for img, src in discovered[:max_images]:
             added.append(Artifact(kind="image_ref", name=img, content=img))
             in_scope_images.add(img)
-            notes.append(
-                f"Codebase `{a.name}`: detected base image `{img}` in a Dockerfile "
-                "→ added a container-image scan (catches inherited OS-package CVEs a "
-                "source-tree scan can't see)."
-            )
+            notes.append(f"Codebase `{a.name}`: " + _SOURCE_NOTE[src].format(img=img) + ".")
         if len(discovered) > max_images:
             extra = len(discovered) - max_images
             notes.append(
-                f"Codebase `{a.name}`: {extra} further base image(s) found; scanned the "
-                f"first {max_images} to keep the run fast."
+                f"Codebase `{a.name}`: {extra} further referenced image(s) found; scanned "
+                f"the first {max_images} to keep the run fast."
             )
 
     return list(artifacts) + added, notes

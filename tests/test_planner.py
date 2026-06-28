@@ -2,7 +2,13 @@
 from __future__ import annotations
 
 from auditor.models import Artifact
-from auditor.planner import _base_images, _iter_dockerfiles, plan_expansion
+from auditor.planner import (
+    _base_images,
+    _images_from_compose,
+    _is_compose_file,
+    _iter_dockerfiles,
+    plan_expansion,
+)
 
 # ── Dockerfile parsing ───────────────────────────────────────────────────────
 
@@ -110,7 +116,7 @@ def test_plan_expansion_bounded(tmp_path):
     expanded, notes = plan_expansion(artifacts, allow_local=True, trivy_available=True, max_images=3)
     added = [a for a in expanded if a.kind == "image_ref"]
     assert len(added) == 3
-    assert any("further base image" in n for n in notes)
+    assert any("further referenced image" in n for n in notes)
 
 
 def test_plan_expansion_ignores_non_codebase(tmp_path):
@@ -118,3 +124,70 @@ def test_plan_expansion_ignores_non_codebase(tmp_path):
     expanded, notes = plan_expansion(artifacts, allow_local=True, trivy_available=True)
     assert expanded == artifacts
     assert notes == []
+
+
+# ── docker-compose discovery ─────────────────────────────────────────────────
+
+
+def test_is_compose_file_naming():
+    assert _is_compose_file("docker-compose.yml")
+    assert _is_compose_file("docker-compose.yaml")
+    assert _is_compose_file("compose.yaml")
+    assert _is_compose_file("docker-compose.prod.yml")
+    assert not _is_compose_file("values.yaml")
+    assert not _is_compose_file("Dockerfile")
+
+
+def test_images_from_compose_extracts_service_images():
+    text = """
+services:
+  web:
+    image: nginx:1.27
+  db:
+    image: postgres:16
+  builder:
+    build: ./api
+"""
+    assert _images_from_compose(text) == ["nginx:1.27", "postgres:16"]
+
+
+def test_images_from_compose_skips_templated_and_dedupes():
+    text = """
+services:
+  a:
+    image: redis:7
+  b:
+    image: ${REGISTRY}/app:latest
+  c:
+    image: redis:7
+"""
+    assert _images_from_compose(text) == ["redis:7"]
+
+
+def test_images_from_compose_handles_malformed_yaml():
+    assert _images_from_compose("::: not valid yaml :::\n  - [") == []
+
+
+def test_plan_expansion_discovers_compose_images(tmp_path):
+    (tmp_path / "docker-compose.yml").write_text(
+        "services:\n  web:\n    image: nginx:1.27\n"
+    )
+    artifacts = [_codebase(tmp_path)]
+    expanded, notes = plan_expansion(artifacts, allow_local=True, trivy_available=True)
+    refs = {a.content for a in expanded if a.kind == "image_ref"}
+    assert refs == {"nginx:1.27"}
+    assert any("docker-compose" in n for n in notes)
+
+
+def test_plan_expansion_merges_dockerfile_and_compose_dedup(tmp_path):
+    # Same image referenced from both sources should be added once.
+    (tmp_path / "Dockerfile").write_text("FROM python:3.12-slim")
+    (tmp_path / "docker-compose.yml").write_text(
+        "services:\n"
+        "  app:\n    image: python:3.12-slim\n"   # dup of the Dockerfile base
+        "  cache:\n    image: redis:7\n"
+    )
+    artifacts = [_codebase(tmp_path)]
+    expanded, _ = plan_expansion(artifacts, allow_local=True, trivy_available=True)
+    refs = sorted(a.content for a in expanded if a.kind == "image_ref")
+    assert refs == ["python:3.12-slim", "redis:7"]
