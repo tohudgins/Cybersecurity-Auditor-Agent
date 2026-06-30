@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import threading
 from functools import lru_cache
 
 from langchain_chroma import Chroma
@@ -20,6 +21,13 @@ from auditor.ingest.web_fetcher import fetch_all
 
 log = logging.getLogger(__name__)
 
+# Serializes the first-time Chroma/embeddings init. The audit graph scans
+# artifacts concurrently, so several threads can call get_vectorstore() before
+# the lru_cache is populated; chromadb 1.x's tenant/database bootstrap is not
+# safe under that race ("Could not connect to tenant default_tenant"). The lock
+# makes the first construction single-flight; subsequent calls hit the cache.
+_store_lock = threading.Lock()
+
 
 @lru_cache(maxsize=1)
 def get_embeddings() -> OpenAIEmbeddings:
@@ -30,14 +38,20 @@ def get_embeddings() -> OpenAIEmbeddings:
 
 
 @lru_cache(maxsize=1)
-def get_vectorstore() -> Chroma:
-    # Cached: a single retrieval previously rebuilt the Chroma client and
-    # embeddings object three times (exact lookup + vector search + BM25 build).
+def _build_vectorstore() -> Chroma:
     return Chroma(
         collection_name=settings.chroma_collection,
         embedding_function=get_embeddings(),
         persist_directory=str(settings.chroma_dir),
     )
+
+
+def get_vectorstore() -> Chroma:
+    # Cached: a single retrieval previously rebuilt the Chroma client and
+    # embeddings object three times (exact lookup + vector search + BM25 build).
+    # The lock guards concurrent first-construction (see _store_lock above).
+    with _store_lock:
+        return _build_vectorstore()
 
 
 def build_index(batch_size: int = 100) -> int:
