@@ -36,8 +36,10 @@ _TRIVY_INSTALL_HINT = (
 _BANDIT_INSTALL_HINT = "Bandit is not installed. Install: `pip install bandit`."
 
 _SEMGREP_INSTALL_HINT = (
-    "Semgrep is not installed. Install: `pip install semgrep` "
-    "or `brew install semgrep` (macOS)."
+    "Semgrep is not installed. Install isolated (recommended): "
+    "`pipx install semgrep`, or `brew install semgrep` (macOS). "
+    "Avoid `pip install semgrep` into this project's venv — its pins conflict "
+    "with the core stack."
 )
 
 _TRIVY_SEVERITY_MAP = {
@@ -73,11 +75,14 @@ _TRIVY_CMD_PREFIX = [
     "--severity", "HIGH,CRITICAL",
 ]
 _BANDIT_CMD_PREFIX = ["bandit", "-r", "-f", "json", "--severity-level", "medium"]
-# `--config auto` selects rulesets by detected language (fetched from the registry,
-# cached under ~/.semgrep). `--metrics off` keeps project metadata local.
+# `--config p/default` is Semgrep's curated, multi-language default ruleset
+# (fetched from the registry, cached under ~/.semgrep). We use it rather than
+# `--config auto` because newer Semgrep (>=1.1xx) refuses `auto` when metrics are
+# disabled — and we keep `--metrics off` so no project metadata leaves the host.
+# p/default is intentionally low-noise; Bandit/Trivy/gitleaks layer on top.
 _SEMGREP_CMD_PREFIX = [
     "semgrep", "scan",
-    "--config", "auto",
+    "--config", "p/default",
     "--json",
     "--quiet",
     "--metrics", "off",
@@ -402,7 +407,7 @@ def _run_semgrep(scanned_path: str) -> list[Finding]:
             _info(
                 "Semgrep scan failed",
                 "\n".join(stderr_tail) or f"exit code {proc.returncode}",
-                "Re-run `semgrep scan --config auto <path>` manually to diagnose.",
+                "Re-run `semgrep scan --config p/default <path>` manually to diagnose.",
                 scanned_path,
             )
         ]

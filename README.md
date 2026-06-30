@@ -190,7 +190,7 @@ Stated plainly, because a GRC tool that overstates its rigor is worse than one t
 | Scanner | Audit kind | Install |
 |---|---|---|
 | [Trivy](https://aquasecurity.github.io/trivy/) | `codebase` / `image_ref` (CVEs + IaC misconfig) | `brew install trivy` |
-| [Semgrep](https://semgrep.dev/) | `codebase` (multi-language SAST) | `pip install semgrep` |
+| [Semgrep](https://semgrep.dev/) | `codebase` (multi-language SAST) | `pipx install semgrep` (isolate it — its pins conflict with the venv) |
 | [Bandit](https://bandit.readthedocs.io/) | `codebase` (Python SAST) | `pip install bandit` |
 | [gitleaks](https://github.com/gitleaks/gitleaks) | `codebase` (secrets) | `brew install gitleaks` — regex fallback if missing |
 | [Checkov](https://www.checkov.io/) | `config` (Terraform / K8s) | `pip install checkov` |
