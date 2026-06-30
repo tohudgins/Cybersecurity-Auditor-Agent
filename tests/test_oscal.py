@@ -175,3 +175,40 @@ def test_poam_emits_item_per_open_finding():
     assert items[0]["title"] == "open high"
     prop_names = {p["name"] for p in items[0]["props"]}
     assert "associated-control" in prop_names and "severity" in prop_names
+
+
+def test_poam_items_carry_governance_fields():
+    findings = [_make_finding(title="open high", severity="high", control_id="SI-2")]
+    poam = to_oscal_poam(findings)["plan-of-action-and-milestones"]
+    item = poam["poam-items"][0]
+    props = {p["name"]: p["value"] for p in item["props"]}
+    assert props["remediation-owner"] == "Unassigned"
+    assert props["remediation-sla-days"] == "30"  # high → 30-day SLA
+    assert "scheduled-completion-date" in props
+    # Each item links to a risk that carries a remediation milestone.
+    assert item["related-risks"]
+    risk = poam["risks"][0]
+    assert item["related-risks"][0]["risk-uuid"] == risk["uuid"]
+    assert risk["status"] == "open"
+    milestone = risk["remediations"][0]["tasks"][0]
+    assert milestone["type"] == "milestone"
+
+
+def test_sla_days_scale_with_severity():
+    crit = to_oscal_poam([_make_finding(severity="critical")])["plan-of-action-and-milestones"]
+    low = to_oscal_poam([_make_finding(severity="low")])["plan-of-action-and-milestones"]
+    crit_sla = {p["name"]: p["value"] for p in crit["poam-items"][0]["props"]}["remediation-sla-days"]
+    low_sla = {p["name"]: p["value"] for p in low["poam-items"][0]["props"]}["remediation-sla-days"]
+    assert int(crit_sla) < int(low_sla)  # critical remediated faster than low
+
+
+def test_assessment_results_emit_risks_with_deadlines():
+    findings = [
+        _make_finding(title="open", severity="high", risk_score=70.0),
+        _make_finding(title="info", severity="info"),
+    ]
+    result = to_oscal_assessment_results(findings)["assessment-results"]["results"][0]
+    assert "risks" in result
+    assert len(result["risks"]) == 1  # info excluded
+    props = {p["name"]: p["value"] for p in result["risks"][0]["props"]}
+    assert props["risk-status"] == "open" and "scheduled-completion-date" in props

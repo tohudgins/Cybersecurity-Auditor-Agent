@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import re
 
-from auditor.models import Finding
+from auditor.models import AuditScope, Finding
 
 _SEVERITY_BASE: dict[str, float] = {
     "critical": 90.0,
@@ -35,9 +35,66 @@ _CVE_RE = re.compile(r"CVE-\d{4}-\d{4,}", re.IGNORECASE)
 _LOCATION_RE = re.compile(r"^\s*([^\s:]+):(\d+)")
 _TITLE_TAG_RE = re.compile(r"^\s*\[[^\]]+\]\s*")  # leading "[B602] " / "[semgrep] " / "[KEV] "
 
+# Controls whose findings get *more likely* to be exploited when the system is
+# internet-facing (exposure / boundary / remote-access / transport).
+_EXPOSURE_CONTROLS = frozenset({
+    "AC-17", "AC-3", "AC-4", "SC-5", "SC-7", "SC-8", "SC-23", "SI-10", "CA-3",
+})
+# Controls whose findings carry *more impact* when the system handles sensitive
+# data (confidentiality / crypto / at-rest / authenticator / least-privilege).
+_CONFIDENTIALITY_CONTROLS = frozenset({
+    "SC-28", "SC-13", "SC-12", "SC-8", "IA-5", "AC-3", "AC-6", "MP-6", "AU-9",
+})
+# Data classifications that signal elevated impact.
+_SENSITIVE_DATA = frozenset({
+    "pii", "phi", "pci", "chd", "cui", "confidential", "secret", "restricted",
+    "regulated", "sensitive",
+})
 
-def compute_risk_score(f: Finding) -> float:
-    """Return a deterministic 0-100 risk score blending severity, CVSS, EPSS, KEV."""
+# Max contextual uplift from each dimension (kept bounded + explainable).
+_EXPOSURE_UPLIFT = 8.0
+_DATA_UPLIFT = 8.0
+
+
+def _anchor_controls(f: Finding) -> set[str]:
+    """The 800-53 anchor control(s) a finding touches, base-id form."""
+    ids: set[str] = set()
+    if f.control_id:
+        ids.add(_base_control(f.control_id))
+    mapped = (f.mapped_controls or {}).get("NIST SP 800-53 Rev. 5") or []
+    ids.update(_base_control(c) for c in mapped)
+    return ids
+
+
+def _base_control(cid: str) -> str:
+    cid = (cid or "").strip()
+    paren = cid.find("(")
+    return cid[:paren].strip() if paren != -1 else cid
+
+
+def _context_uplift(f: Finding, scope: AuditScope) -> float:
+    """Deterministic risk uplift from engagement context (likelihood × impact).
+
+    Only non-info findings on relevant control families are adjusted, and the
+    uplift is bounded so context tunes priority without overwhelming the
+    severity/CVSS/EPSS signal.
+    """
+    if f.severity == "info":
+        return 0.0
+    controls = _anchor_controls(f)
+    uplift = 0.0
+    if scope.internet_facing and (controls & _EXPOSURE_CONTROLS):
+        uplift += _EXPOSURE_UPLIFT
+    data = (scope.data_classification or "").strip().lower()
+    if data and any(tok in data for tok in _SENSITIVE_DATA) and (controls & _CONFIDENTIALITY_CONTROLS):
+        uplift += _DATA_UPLIFT
+    return uplift
+
+
+def compute_risk_score(f: Finding, scope: AuditScope | None = None) -> float:
+    """Return a deterministic 0-100 risk score blending severity, CVSS, EPSS, KEV,
+    plus a bounded contextual uplift from engagement scope (internet exposure +
+    data sensitivity) when *scope* is supplied."""
     score = _SEVERITY_BASE.get(f.severity, 45.0)
 
     if f.cvss_score is not None:
@@ -46,6 +103,9 @@ def compute_risk_score(f: Finding) -> float:
         score += f.epss_score * 10.0
     if f.kev:
         score = max(score, 95.0) + 3.0
+
+    if scope is not None:
+        score += _context_uplift(f, scope)
 
     return round(min(score, 100.0), 1)
 
@@ -113,13 +173,15 @@ def deduplicate(findings: list[Finding]) -> list[Finding]:
     return survivors
 
 
-def normalize_findings(findings: list[Finding]) -> list[Finding]:
+def normalize_findings(findings: list[Finding], scope: AuditScope | None = None) -> list[Finding]:
     """Score, de-duplicate, and rank findings (highest risk first).
 
     Returns a new ordered list; ``risk_score`` is set on each surviving finding.
+    When *scope* is supplied, scoring applies the engagement's contextual uplift
+    (internet exposure + data sensitivity).
     """
     for f in findings:
-        f.risk_score = compute_risk_score(f)
+        f.risk_score = compute_risk_score(f, scope)
 
     deduped = deduplicate(findings)
     deduped.sort(

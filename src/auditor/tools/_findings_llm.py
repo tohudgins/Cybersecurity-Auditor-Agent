@@ -1,12 +1,33 @@
 """Shared helper: invoke an LLM with structured output and return list[Finding]."""
 from __future__ import annotations
 
+import re
+
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
 from auditor.config import settings
 from auditor.models import Finding, Severity
+
+_NIST_FRAMEWORK = "NIST SP 800-53 Rev. 5"
+# A clean 800-53 control ID, optionally with an enhancement: AC-2, AC-2(1), SC-7.
+_NIST_ID_RE = re.compile(r"[A-Z]{2}-\d+(?:\(\d+\))?")
+
+
+def _clean_nist_control_id(control_id: str | None, framework: str | None) -> str | None:
+    """Strip page refs / extra text from an LLM-extracted 800-53 control ID.
+
+    The LLM sometimes copies control IDs out of policy text with surrounding
+    noise (``"AC-16(4) (p.71)"``, ``"IR-1/IR-7 (pp.176,185)"``). Reduce those to
+    the first canonical control ID so the assessment table stays clean. Only
+    applied to 800-53-framed findings — other frameworks (CSF "PR.AA-01", CIS
+    numeric) have different ID shapes and are left untouched.
+    """
+    if not control_id or framework != _NIST_FRAMEWORK:
+        return control_id
+    m = _NIST_ID_RE.search(control_id.upper())
+    return m.group(0) if m else control_id
 
 
 class _LLMFinding(BaseModel):
@@ -56,7 +77,7 @@ def run_findings_chain(
                 title=item.title,
                 severity=item.severity,
                 framework=item.framework,
-                control_id=item.control_id,
+                control_id=_clean_nist_control_id(item.control_id, item.framework),
                 evidence=item.evidence,
                 recommendation=item.recommendation,
                 source_artifact=source_artifact,

@@ -93,15 +93,22 @@ def audit_node(state: AuditorState) -> dict:
             for future in futures:
                 all_findings.extend(future.result())
 
+    # Use the explicit engagement scope if provided, else default to the
+    # configured baseline (NIST 800-53B Moderate by default) so coverage is
+    # measured against a real denominator, not just the controls we happened to
+    # exercise.
+    scope = state.get("scope") or AuditScope(baseline=settings.default_baseline)
+
     enrich_findings(all_findings)
     enrich_with_mappings(all_findings)
-    # Normalize: de-duplicate across scanners, score, and rank by risk.
-    normalized = normalize_findings(all_findings)
+    # Normalize: de-duplicate across scanners, score (with engagement context),
+    # and rank by risk. Mappings are resolved first so contextual scoring can see
+    # each finding's anchor controls.
+    normalized = normalize_findings(all_findings, scope)
 
     # Assess controls: turn findings into per-control verdicts + coverage so the
     # report reads like an audit (what passed / failed / went unassessed), not a
     # bare findings list.
-    scope = state.get("scope") or AuditScope()
     kinds = [a.kind for a in artifacts]
     assessments, coverage = assess_controls(normalized, kinds, scope)
 

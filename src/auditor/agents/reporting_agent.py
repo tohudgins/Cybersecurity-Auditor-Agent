@@ -140,6 +140,83 @@ def _render_assessment_detail(assessments: list[ControlAssessment]) -> str:
     )
 
 
+# 800-53 families dominated by management/operational (process) controls that
+# automated scanning can't test — they need document examination + personnel
+# interviews (per SP 800-53A). Surfaced in the limitations so coverage gaps in
+# these families read as "out of automated scope", not "missed".
+_PROCESS_FAMILIES = {
+    "AT": "Awareness & Training",
+    "CA": "Assessment, Authorization & Monitoring",
+    "CP": "Contingency Planning",
+    "IR": "Incident Response (process)",
+    "MA": "Maintenance",
+    "MP": "Media Protection",
+    "PE": "Physical & Environmental Protection",
+    "PL": "Planning",
+    "PM": "Program Management",
+    "PS": "Personnel Security",
+    "PT": "PII Processing & Transparency",
+    "SA": "System & Services Acquisition",
+    "SR": "Supply Chain Risk Management",
+}
+
+
+def _render_limitations(
+    findings: list[Finding],
+    coverage: CoverageSummary | None,
+    assessments: list[ControlAssessment] | None,
+    artifact_kinds: list[str] | None,
+) -> str:
+    """A Scope & Limitations section — what was assessed, how, and what an
+    automated audit cannot attest to. This is what makes the output read like a
+    real assessor wrote it rather than a scanner dump."""
+    deterministic = sum(1 for f in findings if is_deterministic_source(f.detection_source))
+    ai_assisted = len(findings) - deterministic
+
+    lines: list[str] = ["## Scope & Limitations\n"]
+
+    if artifact_kinds:
+        kinds = ", ".join(sorted(set(artifact_kinds)))
+        lines.append(f"- **Artifacts assessed:** {kinds}.")
+    if coverage:
+        lines.append(
+            f"- **Assessment baseline:** {coverage.baseline} — "
+            f"{coverage.assessed} of {coverage.total_controls} controls assessed "
+            f"({coverage.coverage_pct:.0f}%); {coverage.not_assessed} not assessed."
+        )
+
+    # Which process-heavy families went unassessed → explicitly out of automated scope.
+    unassessed_process: dict[str, str] = {}
+    for a in assessments or []:
+        if a.status == "not-assessed":
+            fam = a.control_id.split("-")[0]
+            if fam in _PROCESS_FAMILIES:
+                unassessed_process[fam] = _PROCESS_FAMILIES[fam]
+    if unassessed_process:
+        fams = ", ".join(f"{name} ({fam})" for fam, name in sorted(unassessed_process.items()))
+        lines.append(
+            "- **Organizational & process controls were not technically tested.** "
+            "Automated scanning evaluates technical configuration and code; it cannot "
+            "examine governance evidence or interview personnel. Controls in these "
+            f"families need manual examination/interview to assess: {fams}."
+        )
+
+    lines.append(
+        f"- **Evidence basis:** {deterministic} deterministic (scanner/heuristic) and "
+        f"{ai_assisted} AI-assisted finding(s). AI-assisted findings are advisory — "
+        "validate each against the source before remediation or attestation."
+    )
+    lines.append(
+        "- **Point-in-time:** results reflect the state of the supplied artifacts at "
+        "scan time and are not a continuous-monitoring attestation."
+    )
+    lines.append(
+        "- **\"Satisfied\" is scoped to the aspect tested** — it indicates the automated "
+        "check found no issue, not a full control attestation."
+    )
+    return "\n".join(lines) + "\n"
+
+
 def _cvss_qualifier(score: float) -> str:
     """Map a CVSS v3 base score to its qualitative rating per spec."""
     if score >= 9.0:
@@ -210,6 +287,7 @@ def _build_report(
     previous_run_at: str | None = None,
     plan_notes: list[str] | None = None,
     recommendations: list[str] | None = None,
+    artifact_kinds: list[str] | None = None,
 ) -> str:
     sorted_findings = sorted(
         findings,
@@ -251,6 +329,11 @@ def _build_report(
 
     coverage_md = _render_coverage(coverage) + "\n" if coverage else ""
     assessment_md = _render_assessment_detail(assessments) + "\n" if assessments else ""
+    limitations_md = (
+        _render_limitations(sorted_findings, coverage, assessments, artifact_kinds) + "\n"
+        if (coverage or assessments)
+        else ""
+    )
 
     return (
         "# Cybersecurity Audit Report\n\n"
@@ -264,6 +347,7 @@ def _build_report(
         f"{remediation_md}"
         f"{coverage_md}"
         f"{assessment_md}"
+        f"{limitations_md}"
         "## Findings\n\n"
         f"{findings_md}"
     )
@@ -282,10 +366,12 @@ def reporting_node(state: AuditorState) -> dict:
     previous_run_at = state.get("previous_run_at")
     plan_notes = state.get("plan_notes")
     recommendations = state.get("recommendations")
+    artifact_kinds = [a.kind for a in (state.get("artifacts") or [])]
     report = _build_report(
         findings, frameworks, assessments, coverage,
         previous_findings=previous_findings, previous_run_at=previous_run_at,
         plan_notes=plan_notes, recommendations=recommendations,
+        artifact_kinds=artifact_kinds,
     )
     return {
         "final_report": report,

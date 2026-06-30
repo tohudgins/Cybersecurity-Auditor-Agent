@@ -6,7 +6,7 @@ from auditor.enrichment.risk import (
     deduplicate,
     normalize_findings,
 )
-from auditor.models import Finding
+from auditor.models import AuditScope, Finding
 
 
 def _f(title: str, severity: str = "medium", **kw) -> Finding:
@@ -28,6 +28,43 @@ def test_risk_score_severity_baseline():
     assert compute_risk_score(_f("x", "medium")) == 45.0
     assert compute_risk_score(_f("x", "low")) == 20.0
     assert compute_risk_score(_f("x", "info")) == 5.0
+
+
+# ---- Contextual risk uplift (engagement scope) ------------------------------
+
+
+def _nist(control_id: str, severity: str = "high") -> Finding:
+    return _f("ctx", severity, framework="NIST SP 800-53 Rev. 5", control_id=control_id)
+
+
+def test_internet_facing_uplifts_exposure_controls():
+    f = _nist("SC-7")  # boundary protection
+    base = compute_risk_score(f)
+    ctx = compute_risk_score(f, AuditScope(internet_facing=True))
+    assert ctx > base
+    # A non-exposure control is unaffected by internet exposure.
+    assert compute_risk_score(_nist("AT-2"), AuditScope(internet_facing=True)) == compute_risk_score(_nist("AT-2"))
+
+
+def test_sensitive_data_uplifts_confidentiality_controls():
+    f = _nist("SC-28")  # protection of information at rest
+    base = compute_risk_score(f)
+    ctx = compute_risk_score(f, AuditScope(data_classification="PII"))
+    assert ctx > base
+
+
+def test_context_uplift_is_bounded_and_skips_info():
+    # Both dimensions on a control in both sets → bounded uplift, never over 100.
+    f = _nist("SC-8", "critical")  # in exposure AND confidentiality sets
+    ctx = compute_risk_score(f, AuditScope(internet_facing=True, data_classification="PHI"))
+    assert ctx <= 100.0
+    # Info findings get no uplift.
+    info = _nist("SC-7", "info")
+    assert compute_risk_score(info, AuditScope(internet_facing=True)) == compute_risk_score(info)
+
+
+def test_no_scope_preserves_legacy_score():
+    assert compute_risk_score(_nist("SC-7")) == 70.0  # unchanged when scope omitted
 
 
 def test_risk_score_cvss_dominates_when_higher():

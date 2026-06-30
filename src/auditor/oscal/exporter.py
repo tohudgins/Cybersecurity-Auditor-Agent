@@ -14,9 +14,21 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from auditor.models import ControlAssessment, CoverageSummary, Finding
+
+# Remediation service-level timelines by severity, mirroring the FedRAMP POA&M
+# convention (Critical 15 / High 30 / Moderate 90 / Low 180 days). Drives each
+# POA&M item's scheduled completion date so the export is an actionable
+# remediation plan, not just a list.
+_REMEDIATION_SLA_DAYS = {
+    "critical": 15,
+    "high": 30,
+    "medium": 90,
+    "low": 180,
+    "info": 180,
+}
 
 # OSCAL implementation-status maps for our control assessment states.
 _STATUS_TO_OSCAL = {
@@ -39,6 +51,15 @@ def _stable_uuid(*parts: str) -> str:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _sla_days(severity: str) -> int:
+    return _REMEDIATION_SLA_DAYS.get(severity, 90)
+
+
+def _deadline_iso(severity: str) -> str:
+    """Scheduled remediation completion = now + the severity's SLA."""
+    return (datetime.now(timezone.utc) + timedelta(days=_sla_days(severity))).isoformat(timespec="seconds")
 
 
 def _observation(finding: Finding, run_id: str) -> dict:
@@ -98,6 +119,55 @@ def _finding(finding: Finding, observation_uuid: str, run_id: str) -> dict:
     }
 
 
+def _risk(finding: Finding, run_id: str, related_observation_uuid: str | None = None) -> dict:
+    """An OSCAL `risk` with a severity-driven remediation deadline + a milestone.
+
+    Real POA&Ms track each weakness as a risk with an owner, a scheduled
+    completion date, and at least one remediation milestone. We synthesize the
+    deadline from the severity SLA; the owner defaults to "Unassigned" for a
+    person to fill in.
+    """
+    risk_id = _stable_uuid("risk", run_id, finding.title)
+    deadline = _deadline_iso(finding.severity)
+    remediation: dict = {
+        "uuid": _stable_uuid("remediation", run_id, finding.title),
+        "lifecycle": "planned",
+        "title": f"Remediate: {finding.title}",
+        "description": finding.recommendation,
+        "props": [
+            {"name": "remediation-owner", "value": "Unassigned"},
+            {"name": "scheduled-completion-date", "value": deadline},
+        ],
+        "tasks": [
+            {
+                "uuid": _stable_uuid("milestone", run_id, finding.title),
+                "type": "milestone",
+                "title": f"Complete remediation within {_sla_days(finding.severity)} days",
+                "timing": {"within-date-range": {"start": _now_iso(), "end": deadline}},
+            }
+        ],
+    }
+    risk: dict = {
+        "uuid": risk_id,
+        "title": finding.title,
+        "description": finding.evidence,
+        "statement": finding.recommendation,
+        "status": "open",
+        "props": [
+            {"name": "severity", "value": finding.severity},
+            {"name": "remediation-sla-days", "value": str(_sla_days(finding.severity))},
+            {"name": "scheduled-completion-date", "value": deadline},
+            {"name": "risk-status", "value": "open"},
+        ],
+        "remediations": [remediation],
+    }
+    if finding.risk_score is not None:
+        risk["props"].append({"name": "risk-score", "value": f"{finding.risk_score:.1f}"})
+    if related_observation_uuid:
+        risk["related-observations"] = [{"observation-uuid": related_observation_uuid}]
+    return risk
+
+
 def _reviewed_controls(assessments: list[ControlAssessment]) -> dict:
     """OSCAL `reviewed-controls`: which controls were in scope + their status.
 
@@ -155,6 +225,13 @@ def to_oscal_assessment_results(
     oscal_findings = [
         _finding(f, observations[i]["uuid"], run_id) for i, f in enumerate(findings)
     ]
+    # One risk per actionable (non-info) finding, carrying the remediation
+    # deadline + milestone so the results are a tracked plan, not just evidence.
+    risks = [
+        _risk(f, run_id, observations[i]["uuid"])
+        for i, f in enumerate(findings)
+        if f.severity != "info"
+    ]
 
     result: dict = {
         "uuid": run_id,
@@ -165,6 +242,8 @@ def to_oscal_assessment_results(
         "observations": observations,
         "findings": oscal_findings,
     }
+    if risks:
+        result["risks"] = risks
     if coverage is not None:
         result["props"] = _coverage_props(coverage)
     if assessments:
@@ -185,16 +264,22 @@ def to_oscal_assessment_results(
     }
 
 
-def _poam_item(finding: Finding, run_id: str) -> dict:
+def _poam_item(finding: Finding, run_id: str, risk_uuid: str) -> dict:
     item_id = _stable_uuid("poam", run_id, finding.title)
     props = _finding_props(finding)
     if finding.control_id:
         props.append({"name": "associated-control", "value": finding.control_id})
+    # Governance fields: owner + scheduled completion driven by the severity SLA,
+    # so the POA&M is an actionable remediation tracker.
+    props.append({"name": "remediation-owner", "value": "Unassigned"})
+    props.append({"name": "remediation-sla-days", "value": str(_sla_days(finding.severity))})
+    props.append({"name": "scheduled-completion-date", "value": _deadline_iso(finding.severity)})
     return {
         "uuid": item_id,
         "title": finding.title,
         "description": f"{finding.evidence}\n\nRemediation: {finding.recommendation}",
         "props": props,
+        "related-risks": [{"risk-uuid": risk_uuid}],
     }
 
 
@@ -215,7 +300,10 @@ def to_oscal_poam(
 
     open_items = [f for f in findings if f.severity != "info"]
     observations = [_observation(f, run_id) for f in open_items]
-    poam_items = [_poam_item(f, run_id) for f in open_items]
+    risks = [_risk(f, run_id, observations[i]["uuid"]) for i, f in enumerate(open_items)]
+    poam_items = [
+        _poam_item(f, run_id, risks[i]["uuid"]) for i, f in enumerate(open_items)
+    ]
 
     return {
         "plan-of-action-and-milestones": {
@@ -228,6 +316,7 @@ def to_oscal_poam(
             },
             "system-id": {"identifier-type": "https://ietf.org/rfc/rfc4122", "id": run_id},
             "observations": observations,
+            "risks": risks,
             "poam-items": poam_items,
         }
     }

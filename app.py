@@ -24,7 +24,7 @@ from auditor.agents.graph import AUDITOR_GRAPH  # noqa: E402
 from auditor.diff import serialize_findings, target_key  # noqa: E402
 from auditor.ingest.pdf_loader import FRAMEWORK_NAMES  # noqa: E402
 from auditor.intake import parse_targets  # noqa: E402
-from auditor.models import Artifact  # noqa: E402
+from auditor.models import Artifact, AuditScope  # noqa: E402
 from auditor.oscal.exporter import to_oscal_assessment_results, to_oscal_poam  # noqa: E402
 from auditor.retrieval.retriever import warm_cache  # noqa: E402
 from auditor.tools.audit_policy_pdf import extract_pdf_text  # noqa: E402
@@ -686,6 +686,38 @@ with st.sidebar:
 
     st.markdown(
         '<div class="sidebar-section">'
+        '<div class="sidebar-label">Engagement scope</div>'
+        '<div class="sidebar-help">Sets the control baseline (coverage denominator) and tunes risk to your environment.</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    _BASELINE_OPTIONS = {
+        "NIST 800-53B Moderate": "moderate",
+        "NIST 800-53B Low": "low",
+        "NIST 800-53B High": "high",
+        "Auditor-curated (technical)": "auditor-curated",
+    }
+    baseline_label_choice = st.selectbox(
+        "Control baseline",
+        options=list(_BASELINE_OPTIONS.keys()),
+        index=0,
+        help="The set of controls coverage is measured against. Moderate is the common default for systems handling non-public data.",
+    )
+    selected_baseline = _BASELINE_OPTIONS[baseline_label_choice]
+    internet_facing = st.checkbox(
+        "Internet-facing system",
+        value=False,
+        help="Raises risk on exposure/boundary controls (e.g. SC-7, AC-17).",
+    )
+    data_classification = st.selectbox(
+        "Data sensitivity",
+        options=["Unspecified", "Public", "Internal", "PII", "PHI", "PCI/CHD", "CUI", "Confidential"],
+        index=0,
+        help="Sensitive classes raise risk on confidentiality controls (e.g. SC-28, IA-5).",
+    )
+
+    st.markdown(
+        '<div class="sidebar-section">'
         '<div class="sidebar-label">Session</div>'
         '</div>',
         unsafe_allow_html=True,
@@ -1043,6 +1075,13 @@ if prompt:
                 "messages": st.session_state.messages,
                 "target_frameworks": target_frameworks,
                 "artifacts": artifacts,
+                "scope": AuditScope(
+                    baseline=selected_baseline,
+                    internet_facing=internet_facing or None,
+                    data_classification=(
+                        None if data_classification == "Unspecified" else data_classification
+                    ),
+                ),
             }
             if prior_run and prior_run.get("findings_json"):
                 try:

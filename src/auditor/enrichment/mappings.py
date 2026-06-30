@@ -109,7 +109,13 @@ def lookup_control(control_id: str) -> dict[str, list[str]] | None:
 def control_title(control_id: str) -> str | None:
     base = _base_id(control_id)
     entry = _load_mappings().get(base)
-    return entry.get("title") if entry else None
+    if entry and entry.get("title"):
+        return entry["title"]
+    # Fall back to the full 800-53 catalog so controls outside the curated
+    # crosswalk (e.g. IR-2, PE-6, AC-16) still render a title in the assessment.
+    from auditor.enrichment.catalog import catalog_title
+
+    return catalog_title(control_id)
 
 
 def catalog_control_ids() -> list[str]:

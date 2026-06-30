@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     chunk_overlap: int = 100
     retrieval_k: int = 10
 
+    # Default control baseline used as the assessment denominator (coverage) when
+    # a run doesn't specify one. "moderate" = the NIST SP 800-53B Moderate set
+    # (~191 controls) — the honest denominator a real engagement assesses against,
+    # so most controls read "not-assessed" unless an artifact exercises them.
+    # Set to "low" / "high" / "auditor-curated" to change the default.
+    # Override per deployment via AUDITOR_DEFAULT_BASELINE.
+    default_baseline: str = Field(default="moderate", alias="AUDITOR_DEFAULT_BASELINE")
+
     # Security: when False, targets that touch the server's filesystem or OS
     # (codebase paths, host audits, chat-referenced files) are refused. Set
     # AUDITOR_ALLOW_LOCAL_TARGETS=false for shared/hosted deployments so a user

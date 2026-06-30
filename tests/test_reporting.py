@@ -1,8 +1,12 @@
 """Tests for the reporting agent's Markdown rendering (focused on enrichment fields)."""
 from __future__ import annotations
 
-from auditor.agents.reporting_agent import _cvss_qualifier, _render_finding
-from auditor.models import Finding
+from auditor.agents.reporting_agent import (
+    _cvss_qualifier,
+    _render_finding,
+    _render_limitations,
+)
+from auditor.models import ControlAssessment, CoverageSummary, Finding
 
 
 def _f(**overrides) -> Finding:
@@ -27,6 +31,28 @@ def test_cvss_qualifier_boundaries():
     assert _cvss_qualifier(8.9) == "High"
     assert _cvss_qualifier(9.0) == "Critical"
     assert _cvss_qualifier(10.0) == "Critical"
+
+
+def test_limitations_flags_process_controls_and_ai_evidence():
+    findings = [
+        _f(title="tech", detection_source="scanner"),
+        _f(title="ai", detection_source="llm", control_id="AC-3"),
+    ]
+    coverage = CoverageSummary(
+        baseline="NIST SP 800-53B — Moderate Impact",
+        total_controls=193, assessed=29, satisfied=17, not_satisfied=11,
+        partial=1, not_assessed=164,
+    )
+    assessments = [
+        ControlAssessment(control_id="PS-3", status="not-assessed"),  # process family
+        ControlAssessment(control_id="SC-7", status="satisfied", method="test"),
+    ]
+    md = _render_limitations(findings, coverage, assessments, ["config", "policy_pdf"])
+    assert "Scope & Limitations" in md
+    assert "Organizational & process controls were not technically tested" in md
+    assert "Personnel Security (PS)" in md  # the unassessed process family is named
+    assert "1 deterministic" in md and "1 AI-assisted" in md
+    assert "Point-in-time" in md
 
 
 def test_render_includes_cvss_line():

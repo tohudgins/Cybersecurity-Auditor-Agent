@@ -23,6 +23,11 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+from auditor.enrichment.catalog import (
+    CURATED_BASELINE,
+    baseline_control_ids,
+    baseline_label,
+)
 from auditor.enrichment.mappings import (
     catalog_control_ids,
     control_title,
@@ -80,12 +85,24 @@ _SEVERITY_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
 
 
 def baseline_controls(scope: AuditScope) -> list[str]:
-    """Return the control IDs in scope. Defaults to the curated crosswalk catalog.
+    """Return the control IDs in scope for the engagement's baseline.
 
-    A named baseline (e.g. a full SP 800-53B Moderate set dropped into a data
-    file) could be loaded here; the curated catalog keeps the demo honest with no
-    fabricated control list.
+    ``scope.baseline`` selects the assessment denominator:
+
+    * ``"auditor-curated"`` (default) → the curated cross-framework catalog —
+      the controls the tool's checks and mappings actually exercise;
+    * a named NIST SP 800-53B baseline (``"low"`` / ``"moderate"`` / ``"high"``)
+      → that baseline's full control set, the honest denominator a real
+      engagement assesses against (most will be ``not-assessed`` unless an
+      artifact exercises them — which is the point).
     """
+    name = (scope.baseline or CURATED_BASELINE).strip()
+    if name and name != CURATED_BASELINE:
+        ids = baseline_control_ids(name)
+        if ids:
+            return ids
+        # Unknown baseline name → fall back to the curated catalog rather than
+        # assess against an empty set.
     return catalog_control_ids()
 
 
@@ -168,7 +185,7 @@ def assess_controls(
             )
         )
 
-    summary = _summarize(scope.baseline, assessments)
+    summary = _summarize(_baseline_label(scope.baseline), assessments)
     return assessments, summary
 
 
@@ -188,6 +205,15 @@ def _summarize(baseline: str, assessments: list[ControlAssessment]) -> CoverageS
         not_applicable=counts.get("not-applicable", 0),
         not_assessed=not_assessed,
     )
+
+
+def _baseline_label(baseline: str | None) -> str:
+    """Friendly label for the coverage summary: the curated default keeps its
+    name; named 800-53B baselines render their human label."""
+    name = (baseline or CURATED_BASELINE).strip()
+    if name and name != CURATED_BASELINE:
+        return baseline_label(name)
+    return name or CURATED_BASELINE
 
 
 def _severity_name(rank: int) -> str:
