@@ -24,9 +24,11 @@ def test_catalog_titles_resolve_controls_outside_the_crosswalk():
     assert catalog_title("IR-1") == "Policy and Procedures"
 
 
-def test_enhancement_falls_back_to_base_control_title():
-    assert catalog_title("AC-16(4)") == "Security and Privacy Attributes"
-    assert catalog_title("AC-2(1)") == "Account Management"
+def test_enhancement_titles_resolve():
+    # The authoritative catalog carries each enhancement's own title...
+    assert catalog_title("AC-2(1)") == "Automated System Account Management"
+    # ...and an enhancement absent from the catalog falls back to its base control.
+    assert catalog_title("AC-2(99)") == "Account Management"
 
 
 def test_control_title_uses_catalog_fallback():

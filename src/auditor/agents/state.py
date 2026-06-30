@@ -39,3 +39,9 @@ class AuditorState(TypedDict, total=False):
     # the reporting node renders a "Remediation Progress" section when present.
     previous_findings: list[dict]
     previous_run_at: str
+    # Active suppression records (accepted-risk / false-positive dispositions) the
+    # UI loads for the target; audit_node applies them so suppressed findings drop
+    # out of the active set + assessment. The matched-and-removed findings flow
+    # back out as `suppressed_findings` for the report's "Accepted Risks" section.
+    suppressions: list[dict]
+    suppressed_findings: list[dict]

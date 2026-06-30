@@ -252,6 +252,37 @@ def _executive_summary(findings: list[Finding], frameworks: list[str] | None) ->
     )
 
 
+_SUPPRESSION_LABEL = {
+    "accepted-risk": "Accepted Risk",
+    "false-positive": "False Positive",
+}
+
+
+def _render_suppressions(suppressed: list[dict] | None) -> str:
+    """Render dispositioned findings (accepted risk / false positive).
+
+    Suppressed findings are kept out of the active findings + assessment, but
+    surfaced here for auditability — a real register shows what was accepted, by
+    what rationale, never silently hides it."""
+    if not suppressed:
+        return ""
+    lines = [
+        "## Accepted Risks & Suppressed Findings\n",
+        "_These findings were previously dispositioned and are excluded from the "
+        "active findings and control assessment above. They remain recorded for "
+        "auditability._\n",
+    ]
+    for s in suppressed:
+        label = _SUPPRESSION_LABEL.get(s.get("kind", ""), s.get("kind", "suppressed"))
+        sev = str(s.get("severity", "")).upper()
+        cid = f" — {s['control_id']}" if s.get("control_id") else ""
+        expiry = f" (expires {s['expires_at']})" if s.get("expires_at") else ""
+        lines.append(f"- **[{label}]** [{sev}] {s.get('title', '(untitled)')}{cid}{expiry}")
+        if s.get("reason"):
+            lines.append(f"  - _Rationale:_ {s['reason']}")
+    return "\n".join(lines) + "\n"
+
+
 def _render_plan(notes: list[str] | None) -> str:
     """Render the adaptive scope-planning notes as an 'Audit Plan' section."""
     if not notes:
@@ -288,6 +319,7 @@ def _build_report(
     plan_notes: list[str] | None = None,
     recommendations: list[str] | None = None,
     artifact_kinds: list[str] | None = None,
+    suppressed_findings: list[dict] | None = None,
 ) -> str:
     sorted_findings = sorted(
         findings,
@@ -334,6 +366,8 @@ def _build_report(
         if (coverage or assessments)
         else ""
     )
+    suppressed_md = _render_suppressions(suppressed_findings)
+    suppressed_md = suppressed_md + "\n" if suppressed_md else ""
 
     return (
         "# Cybersecurity Audit Report\n\n"
@@ -348,6 +382,7 @@ def _build_report(
         f"{coverage_md}"
         f"{assessment_md}"
         f"{limitations_md}"
+        f"{suppressed_md}"
         "## Findings\n\n"
         f"{findings_md}"
     )
@@ -367,11 +402,12 @@ def reporting_node(state: AuditorState) -> dict:
     plan_notes = state.get("plan_notes")
     recommendations = state.get("recommendations")
     artifact_kinds = [a.kind for a in (state.get("artifacts") or [])]
+    suppressed_findings = state.get("suppressed_findings")
     report = _build_report(
         findings, frameworks, assessments, coverage,
         previous_findings=previous_findings, previous_run_at=previous_run_at,
         plan_notes=plan_notes, recommendations=recommendations,
-        artifact_kinds=artifact_kinds,
+        artifact_kinds=artifact_kinds, suppressed_findings=suppressed_findings,
     )
     return {
         "final_report": report,

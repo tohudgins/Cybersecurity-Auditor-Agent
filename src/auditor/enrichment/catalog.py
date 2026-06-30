@@ -115,10 +115,13 @@ def list_baselines() -> list[str]:
     return list(_baselines_raw().keys())
 
 
-def _sort_key(cid: str) -> tuple[str, int]:
-    fam, _, num = cid.partition("-")
-    digits = "".join(c for c in num if c.isdigit())
-    return (fam, int(digits) if digits else 0)
+def _sort_key(cid: str) -> tuple[str, int, int]:
+    """Sort by family, then base number, then enhancement number, so AC-2 < AC-2(1) < AC-3."""
+    fam, _, rest = cid.partition("-")
+    base, _, enh = rest.partition("(")
+    base_n = int("".join(c for c in base if c.isdigit()) or 0)
+    enh_n = int("".join(c for c in enh if c.isdigit()) or 0)
+    return (fam, base_n, enh_n)
 
 
 def reset_cache() -> None:

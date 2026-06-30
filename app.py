@@ -20,6 +20,7 @@ import streamlit as st  # noqa: E402
 from langchain_core.messages import AIMessage, HumanMessage  # noqa: E402
 
 from auditor import history as audit_history  # noqa: E402
+from auditor import suppressions as audit_suppressions  # noqa: E402
 from auditor.agents.graph import AUDITOR_GRAPH  # noqa: E402
 from auditor.diff import serialize_findings, target_key  # noqa: E402
 from auditor.ingest.pdf_loader import FRAMEWORK_NAMES  # noqa: E402
@@ -759,6 +760,27 @@ with st.sidebar:
                 st.session_state["_viewed_run_id"] = "_all"
                 st.rerun()
 
+    # ── Accepted-risk / false-positive register ──────────────────────────
+    all_suppressions = audit_suppressions.list_suppressions()
+    if all_suppressions:
+        st.markdown(
+            '<div class="sidebar-section">'
+            f'<div class="sidebar-label">Accepted Risks ({len(all_suppressions)})</div>'
+            '<div class="sidebar-help">Dispositioned findings excluded from audits. Delete to re-surface.</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        for s in all_suppressions[:8]:
+            tag = "AR" if s["kind"] == "accepted-risk" else "FP"
+            scope = "global" if not s.get("target_key") else "this target"
+            col_a, col_b = st.columns([5, 1])
+            with col_a:
+                st.caption(f"[{tag}/{scope}] {s.get('title') or s['fingerprint']}")
+            with col_b:
+                if st.button("✕", key=f"unsup_{s['id']}", help="Remove suppression"):
+                    audit_suppressions.delete_suppression(s["id"])
+                    st.rerun()
+
 
 # ---- Helpers ---------------------------------------------------------------
 
@@ -1089,6 +1111,9 @@ if prompt:
                     inputs["previous_run_at"] = prior_run.get("timestamp")
                 except (ValueError, TypeError):
                     pass
+            # Triage: apply any accepted-risk / false-positive dispositions the
+            # user recorded for this target (or globally) on a previous run.
+            inputs["suppressions"] = audit_suppressions.active_records(tkey)
             final_report: str | None = None
             findings = []
             assessments = []
@@ -1145,6 +1170,34 @@ if prompt:
                         mime="application/json",
                         help="NIST OSCAL 1.1.2 Plan of Action & Milestones — open findings as remediation items.",
                     )
+
+                # Triage: let the analyst disposition a finding as accepted-risk /
+                # false-positive. It's recorded against this target (or globally)
+                # and excluded from the next audit, but stays in the register.
+                with st.expander("🛑 Triage — accept risk / mark false positive"):
+                    with st.form("suppress_form", clear_on_submit=True):
+                        idx = st.selectbox(
+                            "Finding",
+                            options=list(range(len(findings))),
+                            format_func=lambda i: f"[{findings[i].severity.upper()}] {findings[i].title}"[:90],
+                        )
+                        kind = st.radio(
+                            "Disposition",
+                            options=["accepted-risk", "false-positive"],
+                            horizontal=True,
+                            format_func=lambda k: "Accepted risk" if k == "accepted-risk" else "False positive",
+                        )
+                        reason = st.text_input("Rationale (required)", placeholder="e.g. compensating control X; not exploitable because …")
+                        apply_global = st.checkbox("Apply to all targets (global)", value=False)
+                        if st.form_submit_button("Suppress finding") :
+                            if not reason.strip():
+                                st.warning("A rationale is required to suppress a finding.")
+                            else:
+                                audit_suppressions.add_suppression(
+                                    findings[idx], kind, reason.strip(),
+                                    target_key=None if apply_global else tkey,
+                                )
+                                st.success("Recorded — excluded from the next audit of this target; visible in the register.")
 
                 # Persist the run to history, including a finding snapshot keyed by
                 # target so the *next* audit of this target can diff against it.

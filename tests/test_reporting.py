@@ -5,6 +5,7 @@ from auditor.agents.reporting_agent import (
     _cvss_qualifier,
     _render_finding,
     _render_limitations,
+    _render_suppressions,
 )
 from auditor.models import ControlAssessment, CoverageSummary, Finding
 
@@ -53,6 +54,23 @@ def test_limitations_flags_process_controls_and_ai_evidence():
     assert "Personnel Security (PS)" in md  # the unassessed process family is named
     assert "1 deterministic" in md and "1 AI-assisted" in md
     assert "Point-in-time" in md
+
+
+def test_render_suppressions_lists_disposition_and_rationale():
+    md = _render_suppressions([
+        {"title": "Open port 22", "severity": "high", "control_id": "AC-17",
+         "kind": "accepted-risk", "reason": "bastion-only, MFA enforced", "expires_at": "2026-12-31T00:00:00Z"},
+        {"title": "Noisy lint", "severity": "low", "kind": "false-positive", "reason": "test fixture"},
+    ])
+    assert "Accepted Risks & Suppressed Findings" in md
+    assert "[Accepted Risk]" in md and "[False Positive]" in md
+    assert "bastion-only, MFA enforced" in md
+    assert "expires 2026-12-31" in md
+
+
+def test_render_suppressions_empty_is_blank():
+    assert _render_suppressions(None) == ""
+    assert _render_suppressions([]) == ""
 
 
 def test_render_includes_cvss_line():

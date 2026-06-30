@@ -11,6 +11,7 @@ from auditor.enrichment.mappings import enrich_with_mappings
 from auditor.enrichment.mitre import enrich_findings
 from auditor.enrichment.risk import normalize_findings
 from auditor.models import Artifact, AuditScope, Finding
+from auditor.suppressions import apply_suppressions
 from auditor.tools.audit_cloud import audit_cloud
 from auditor.tools.audit_codebase import audit_codebase, audit_image
 from auditor.tools.audit_config import audit_config
@@ -106,10 +107,21 @@ def audit_node(state: AuditorState) -> dict:
     # each finding's anchor controls.
     normalized = normalize_findings(all_findings, scope)
 
+    # Apply triage: drop findings the user previously dispositioned as accepted
+    # risk / false positive so they don't dominate the report or skew the
+    # assessment. They stay visible (and auditable) in their own report section.
+    suppression_records = state.get("suppressions") or []
+    active, suppressed = apply_suppressions(normalized, suppression_records)
+
     # Assess controls: turn findings into per-control verdicts + coverage so the
     # report reads like an audit (what passed / failed / went unassessed), not a
     # bare findings list.
     kinds = [a.kind for a in artifacts]
-    assessments, coverage = assess_controls(normalized, kinds, scope)
+    assessments, coverage = assess_controls(active, kinds, scope)
 
-    return {"findings": normalized, "assessments": assessments, "coverage": coverage}
+    return {
+        "findings": active,
+        "assessments": assessments,
+        "coverage": coverage,
+        "suppressed_findings": suppressed,
+    }
