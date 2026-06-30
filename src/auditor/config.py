@@ -19,9 +19,17 @@ class Settings(BaseSettings):
     chroma_dir: Path = PROJECT_ROOT / ".chromadb"
     chroma_collection: str = "frameworks_v2"
 
-    embedding_model: str = "text-embedding-3-small"
-    synthesis_model: str = "gpt-5"
-    fast_model: str = "gpt-5-mini"
+    # Models — all overridable via .env. Tiered by task:
+    #   synthesis_model — compliance Q&A synthesis (quality-critical, cited answers)
+    #   audit_model     — per-artifact audit finding extraction (summarizes scanner
+    #                     output; a fast mini model keeps audits quick)
+    #   fast_model      — executive summary (short, fast)
+    # Defaults track the current OpenAI lineup (June 2026); bump them here or via
+    # env as newer models ship — no other code change needed.
+    embedding_model: str = Field(default="text-embedding-3-small", alias="AUDITOR_EMBEDDING_MODEL")
+    synthesis_model: str = Field(default="gpt-5.5", alias="AUDITOR_SYNTHESIS_MODEL")
+    audit_model: str = Field(default="gpt-5.4-mini", alias="AUDITOR_AUDIT_MODEL")
+    fast_model: str = Field(default="gpt-5.4-mini", alias="AUDITOR_FAST_MODEL")
     # Reasoning effort for the compliance-Q&A synthesis call. The task is
     # grounded extraction from cited excerpts, not open-ended reasoning, so
     # "low" cuts time-to-first-token sharply without hurting answer quality.

@@ -83,7 +83,7 @@ def run_findings_chain(
         return []
 
     llm = ChatOpenAI(
-        model=model or settings.synthesis_model,
+        model=model or settings.audit_model,
         api_key=settings.openai_api_key,
         reasoning_effort=settings.audit_reasoning_effort,
     ).with_structured_output(_FindingList)

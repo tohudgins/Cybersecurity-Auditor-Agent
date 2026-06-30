@@ -183,7 +183,7 @@ Stated plainly, because a GRC tool that overstates its rigor is worse than one t
 
 ## Tech stack
 
-**[LangGraph](https://github.com/langchain-ai/langgraph)** (agent state machine) · **[LangChain](https://github.com/langchain-ai/langchain)** (retrieval/prompts/structured output) · **[ChromaDB](https://github.com/chroma-core/chroma)** + **[rank-bm25](https://github.com/dorianbrown/rank_bm25)** (hybrid retrieval via RRF) · **[OpenAI](https://platform.openai.com/)** (`gpt-5` / `gpt-5-mini`, `text-embedding-3-small`) · **[Streamlit](https://streamlit.io/)** (UI) · **[Pydantic](https://docs.pydantic.dev/)** (typed models) · **[pypdf](https://github.com/py-pdf/pypdf)**.
+**[LangGraph](https://github.com/langchain-ai/langgraph)** (agent state machine) · **[LangChain](https://github.com/langchain-ai/langchain)** (retrieval/prompts/structured output) · **[ChromaDB](https://github.com/chroma-core/chroma)** + **[rank-bm25](https://github.com/dorianbrown/rank_bm25)** (hybrid retrieval via RRF) · **[OpenAI](https://platform.openai.com/)** (`gpt-5.5` Q&A / `gpt-5.4-mini` audit + summary, `text-embedding-3-small`; all `.env`-overridable) · **[Streamlit](https://streamlit.io/)** (UI) · **[Pydantic](https://docs.pydantic.dev/)** (typed models) · **[pypdf](https://github.com/py-pdf/pypdf)**.
 
 ### External scanners (auto-degraded if missing)
 
