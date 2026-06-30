@@ -716,6 +716,12 @@ with st.sidebar:
         index=0,
         help="Sensitive classes raise risk on confidentiality controls (e.g. SC-28, IA-5).",
     )
+    fast_mode = st.checkbox(
+        "⚡ Fast mode (deterministic only)",
+        value=False,
+        help="Skip the AI narrative layer for a near-instant scanner/heuristic-only pass. "
+        "Findings, risk scores, control mappings, coverage and OSCAL still render.",
+    )
 
     st.markdown(
         '<div class="sidebar-section">'
@@ -1104,6 +1110,7 @@ if prompt:
                         None if data_classification == "Unspecified" else data_classification
                     ),
                 ),
+                "fast_mode": fast_mode,
             }
             if prior_run and prior_run.get("findings_json"):
                 try:

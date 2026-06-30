@@ -1,6 +1,7 @@
 """Audit agent node: dispatches each uploaded artifact to its matching tool."""
 from __future__ import annotations
 
+import contextvars
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
@@ -12,6 +13,7 @@ from auditor.enrichment.mitre import enrich_findings
 from auditor.enrichment.risk import normalize_findings
 from auditor.models import Artifact, AuditScope, Finding
 from auditor.suppressions import apply_suppressions
+from auditor.tools._findings_llm import set_llm_analysis
 from auditor.tools.audit_cloud import audit_cloud
 from auditor.tools.audit_codebase import audit_codebase, audit_image
 from auditor.tools.audit_config import audit_config
@@ -84,13 +86,24 @@ def audit_node(state: AuditorState) -> dict:
     artifacts: list[Artifact] = state.get("artifacts") or []
     frameworks = state.get("target_frameworks") or None
 
+    # Fast/deterministic mode: turn off the LLM narrative layer for this run.
+    fast_mode = state.get("fast_mode")
+    if fast_mode is None:
+        fast_mode = settings.fast_mode
+    set_llm_analysis(not fast_mode)
+
     all_findings: list[Finding] = []
     if artifacts:
         # Artifacts are independent and each spends most of its time waiting on
         # LLM/subprocess I/O, so audit them concurrently. Order is preserved by
         # reading futures in submission order; results are re-ranked downstream.
+        # copy_context() per task propagates the fast-mode flag into the workers
+        # (plain ThreadPoolExecutor threads start with an empty context).
         with ThreadPoolExecutor(max_workers=min(len(artifacts), 8)) as pool:
-            futures = [pool.submit(_audit_one_safe, a, frameworks) for a in artifacts]
+            futures = [
+                pool.submit(contextvars.copy_context().run, _audit_one_safe, a, frameworks)
+                for a in artifacts
+            ]
             for future in futures:
                 all_findings.extend(future.result())
 

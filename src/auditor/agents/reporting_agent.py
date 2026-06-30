@@ -230,7 +230,43 @@ def _cvss_qualifier(score: float) -> str:
     return "None"
 
 
-def _executive_summary(findings: list[Finding], frameworks: list[str] | None) -> str:
+def _deterministic_summary(findings: list[Finding]) -> str:
+    """A no-LLM executive summary for fast mode: counts + the top risks by score."""
+    if not findings:
+        return (
+            "Fast (deterministic) scan — no scanner/heuristic findings were surfaced "
+            "for the supplied artifacts. AI narrative analysis was skipped; re-run "
+            "with full analysis for deeper, context-aware review."
+        )
+    sev: dict[str, int] = defaultdict(int)
+    for f in findings:
+        sev[f.severity] += 1
+    counts = ", ".join(
+        f"{sev[s]} {s}" for s in ("critical", "high", "medium", "low", "info") if sev.get(s)
+    )
+    top = sorted(
+        findings,
+        key=lambda f: -(f.risk_score if f.risk_score is not None else 0.0),
+    )[:5]
+    top_lines = "\n".join(
+        f"- [{f.severity.upper()}] {f.title}"
+        + (f" — {f.control_id}" if f.control_id else "")
+        for f in top
+    )
+    return (
+        f"**Fast (deterministic) scan** — {len(findings)} finding(s): {counts}. "
+        "AI narrative analysis was skipped for speed; the items below are from "
+        "scanners and built-in heuristics only. Re-run with full analysis for "
+        "context, business impact, and remediation depth.\n\n"
+        f"**Highest-risk findings:**\n{top_lines}"
+    )
+
+
+def _executive_summary(
+    findings: list[Finding], frameworks: list[str] | None, fast_mode: bool = False
+) -> str:
+    if fast_mode:
+        return _deterministic_summary(findings)
     if not findings:
         return "No compliance findings were produced. The provided artifacts did not surface any issues against the selected frameworks."
 
@@ -320,6 +356,7 @@ def _build_report(
     recommendations: list[str] | None = None,
     artifact_kinds: list[str] | None = None,
     suppressed_findings: list[dict] | None = None,
+    fast_mode: bool = False,
 ) -> str:
     sorted_findings = sorted(
         findings,
@@ -344,7 +381,7 @@ def _build_report(
         f"{ai_assisted} AI-assisted\n"
     )
 
-    summary = _executive_summary(sorted_findings, frameworks)
+    summary = _executive_summary(sorted_findings, frameworks, fast_mode=fast_mode)
 
     findings_md = "\n".join(_render_finding(i + 1, f) for i, f in enumerate(sorted_findings)) or "_No findings._"
 
@@ -403,11 +440,15 @@ def reporting_node(state: AuditorState) -> dict:
     recommendations = state.get("recommendations")
     artifact_kinds = [a.kind for a in (state.get("artifacts") or [])]
     suppressed_findings = state.get("suppressed_findings")
+    fast_mode = state.get("fast_mode")
+    if fast_mode is None:
+        fast_mode = settings.fast_mode
     report = _build_report(
         findings, frameworks, assessments, coverage,
         previous_findings=previous_findings, previous_run_at=previous_run_at,
         plan_notes=plan_notes, recommendations=recommendations,
         artifact_kinds=artifact_kinds, suppressed_findings=suppressed_findings,
+        fast_mode=fast_mode,
     )
     return {
         "final_report": report,

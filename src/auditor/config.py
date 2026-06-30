@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     # Override per deployment via AUDITOR_DEFAULT_BASELINE.
     default_baseline: str = Field(default="moderate", alias="AUDITOR_DEFAULT_BASELINE")
 
+    # Fast/deterministic mode default: when True, audits skip the LLM narrative
+    # layer (per-artifact analysis + executive summary) for a near-instant
+    # scanner/heuristic-only pass. The UI exposes a per-run toggle; this is the
+    # fallback when a run doesn't specify one. Override via AUDITOR_FAST_MODE.
+    fast_mode: bool = Field(default=False, alias="AUDITOR_FAST_MODE")
+
     # Security: when False, targets that touch the server's filesystem or OS
     # (codebase paths, host audits, chat-referenced files) are refused. Set
     # AUDITOR_ALLOW_LOCAL_TARGETS=false for shared/hosted deployments so a user

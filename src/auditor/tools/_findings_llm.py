@@ -1,6 +1,7 @@
 """Shared helper: invoke an LLM with structured output and return list[Finding]."""
 from __future__ import annotations
 
+import contextvars
 import re
 
 from langchain_core.prompts import PromptTemplate
@@ -9,6 +10,24 @@ from pydantic import BaseModel, Field
 
 from auditor.config import settings
 from auditor.models import Finding, Severity
+
+# Per-run toggle for the AI narrative layer. Fast/deterministic mode flips this
+# off so every audit tool returns only its scanner/heuristic findings — no LLM
+# call, sub-second per tool. A ContextVar (not a global) so it's set per audit
+# run and propagates into the audit ThreadPoolExecutor via copy_context().
+_llm_analysis: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "audit_llm_analysis", default=True
+)
+
+
+def set_llm_analysis(enabled: bool) -> None:
+    """Enable/disable the LLM narrative layer for the current context."""
+    _llm_analysis.set(enabled)
+
+
+def llm_analysis_enabled() -> bool:
+    return _llm_analysis.get()
+
 
 _NIST_FRAMEWORK = "NIST SP 800-53 Rev. 5"
 # A clean 800-53 control ID, optionally with an enhancement: AC-2, AC-2(1), SC-7.
@@ -58,6 +77,11 @@ def run_findings_chain(
     model: str | None = None,
     source_artifact: str | None = None,
 ) -> list[Finding]:
+    # Fast/deterministic mode: skip the LLM entirely; the tool keeps only its
+    # scanner/heuristic findings.
+    if not _llm_analysis.get():
+        return []
+
     llm = ChatOpenAI(
         model=model or settings.synthesis_model,
         api_key=settings.openai_api_key,

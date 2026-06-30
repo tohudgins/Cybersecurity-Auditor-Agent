@@ -45,3 +45,7 @@ class AuditorState(TypedDict, total=False):
     # back out as `suppressed_findings` for the report's "Accepted Risks" section.
     suppressions: list[dict]
     suppressed_findings: list[dict]
+    # Fast/deterministic mode: skip the LLM narrative layer (per-tool analysis +
+    # executive summary) for a near-instant scanner/heuristic-only pass. Defaults
+    # to settings.fast_mode when unset.
+    fast_mode: bool

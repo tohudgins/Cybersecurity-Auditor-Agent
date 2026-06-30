@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from auditor.agents.reporting_agent import (
     _cvss_qualifier,
+    _deterministic_summary,
+    _executive_summary,
     _render_finding,
     _render_limitations,
     _render_suppressions,
@@ -71,6 +73,19 @@ def test_render_suppressions_lists_disposition_and_rationale():
 def test_render_suppressions_empty_is_blank():
     assert _render_suppressions(None) == ""
     assert _render_suppressions([]) == ""
+
+
+def test_deterministic_summary_is_used_in_fast_mode_without_llm():
+    # fast_mode=True must NOT call the LLM; it returns a deterministic summary.
+    findings = [
+        _f(title="Critical thing", severity="critical", risk_score=95.0, control_id="IA-5"),
+        _f(title="Minor thing", severity="low", risk_score=20.0),
+    ]
+    md = _executive_summary(findings, None, fast_mode=True)
+    assert "Fast (deterministic) scan" in md
+    assert "Critical thing" in md  # top risk surfaced
+    # No findings → graceful deterministic message (still no LLM).
+    assert "no scanner/heuristic findings" in _deterministic_summary([]).lower()
 
 
 def test_render_includes_cvss_line():
