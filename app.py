@@ -626,29 +626,15 @@ st.markdown(
 # ---- Sidebar --------------------------------------------------------------
 
 with st.sidebar:
+    # ── Audit target ─────────────────────────────────────────────────────
     st.markdown(
         '<div class="sidebar-section">'
-        '<div class="sidebar-label">Frameworks</div>'
-        '<div class="sidebar-help">Restrict the corpus. Leave empty to use everything.</div>'
+        '<div class="sidebar-label">Audit target</div>'
+        '<div class="sidebar-help">Attach files, or just say what to audit in the chat '
+        "(e.g. “audit ~/repo”). Cleared after each run.</div>"
         '</div>',
         unsafe_allow_html=True,
     )
-    target_frameworks = st.multiselect(
-        label="Frameworks",
-        label_visibility="collapsed",
-        options=sorted(set(FRAMEWORK_NAMES.values())),
-        default=[],
-        placeholder="All frameworks",
-    )
-
-    st.markdown(
-        '<div class="sidebar-section">'
-        '<div class="sidebar-label">Attach artifacts</div>'
-        '<div class="sidebar-help">Files, a pasted description, or a codebase path. Cleared after each run.</div>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
-
     uploaded_files = st.file_uploader(
         "Files",
         type=["pdf", "tf", "tfvars", "yaml", "yml", "conf", "log", "txt", "json", "cfg"],
@@ -656,49 +642,45 @@ with st.sidebar:
         help="Dockerfiles: rename to Dockerfile.txt so the uploader accepts them.",
         label_visibility="collapsed",
     )
-    with st.expander("Other input methods"):
+    with st.expander("More input types"):
         pasted_description = st.text_area(
-            "Description",
-            height=100,
-            placeholder="Paste a system description...",
+            "Description", height=100, placeholder="Paste a system description…",
             label_visibility="collapsed",
         )
         codebase_path = st.text_input(
-            "Codebase path",
-            placeholder="Codebase path to scan with Trivy",
-            help="Requires Trivy installed locally (see README).",
-            label_visibility="collapsed",
+            "Codebase path", placeholder="Codebase path to scan with Trivy",
+            help="Requires Trivy installed locally (see README).", label_visibility="collapsed",
         )
-        st.markdown('<div class="sidebar-label" style="margin-top:0.75rem">Live scan targets</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="sidebar-label" style="margin-top:0.75rem">Live scan targets</div>',
+            unsafe_allow_html=True,
+        )
         cloud_target = st.text_input(
-            "Cloud account",
-            placeholder="Cloud posture, e.g. aws or aws:profile",
-            help="Runs Prowler against the account using your local cloud SDK credentials (read-only).",
+            "Cloud account", placeholder="Cloud posture, e.g. aws or aws:profile",
+            help="Runs Prowler against the account using your local read-only cloud credentials.",
             label_visibility="collapsed",
         )
         image_ref = st.text_input(
-            "Container image",
-            placeholder="Container image, e.g. nginx:1.21",
+            "Container image", placeholder="Container image, e.g. nginx:1.21",
             help="Scans the image with `trivy image` for CVEs + misconfigurations.",
             label_visibility="collapsed",
         )
         target_url = st.text_input(
-            "Web target URL",
-            placeholder="Web URL to DAST-scan, e.g. https://example.com",
+            "Web target URL", placeholder="Web URL to DAST-scan, e.g. https://example.com",
             help="Runs a Nuclei DAST scan. Only scan targets you are authorized to test.",
             label_visibility="collapsed",
         )
         host_target = st.text_input(
-            "Host / machine",
-            placeholder="Machine to harden-audit, e.g. localhost or user@server",
+            "Host / machine", placeholder="Machine to harden-audit, e.g. localhost or user@server",
             help="Runs a Lynis OS-hardening audit (local, or remote over SSH).",
             label_visibility="collapsed",
         )
 
+    # ── Audit settings ───────────────────────────────────────────────────
     st.markdown(
         '<div class="sidebar-section">'
-        '<div class="sidebar-label">Engagement scope</div>'
-        '<div class="sidebar-help">Sets the control baseline (coverage denominator) and tunes risk to your environment.</div>'
+        '<div class="sidebar-label">Audit settings</div>'
+        '<div class="sidebar-help">The control standard coverage is measured against.</div>'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -716,29 +698,33 @@ with st.sidebar:
         "Audit standard / baseline",
         options=list(_BASELINE_OPTIONS.keys()),
         index=0,
-        help="The control set coverage is measured against. NIST 800-53B is assessed "
-        "directly; CIS/PCI/CSF/SOC 2 are assessed by projecting findings through the "
-        "NIST crosswalk (coverage is bounded by mapping completeness).",
+        label_visibility="collapsed",
+        help="NIST 800-53B is assessed directly; CIS/PCI/CSF/SOC 2 are projected through the "
+        "NIST crosswalk (coverage bounded by mapping completeness).",
     )
     selected_baseline = _BASELINE_OPTIONS[baseline_label_choice]
-    internet_facing = st.checkbox(
-        "Internet-facing system",
-        value=False,
-        help="Raises risk on exposure/boundary controls (e.g. SC-7, AC-17).",
-    )
-    data_classification = st.selectbox(
-        "Data sensitivity",
-        options=["Unspecified", "Public", "Internal", "PII", "PHI", "PCI/CHD", "CUI", "Confidential"],
-        index=0,
-        help="Sensitive classes raise risk on confidentiality controls (e.g. SC-28, IA-5).",
-    )
-    with st.expander("System profile (SSP) — optional"):
+
+    with st.expander("Scope & risk (optional)"):
+        st.caption("Tunes risk to your environment and drives the scope-completeness check.")
+        internet_facing = st.checkbox(
+            "Internet-facing system", value=False,
+            help="Raises risk on exposure/boundary controls (e.g. SC-7, AC-17).",
+        )
+        data_classification = st.selectbox(
+            "Data sensitivity",
+            options=["Unspecified", "Public", "Internal", "PII", "PHI", "PCI/CHD", "CUI", "Confidential"],
+            index=0,
+            help="Sensitive classes raise risk on confidentiality controls (e.g. SC-28, IA-5).",
+        )
+        st.markdown(
+            '<div class="sidebar-label" style="margin-top:0.5rem">System profile (SSP)</div>',
+            unsafe_allow_html=True,
+        )
         system_name = st.text_input("System name", value="", placeholder="e.g. Payments Platform")
         system_owner = st.text_input("Owner", value="", placeholder="System / authorizing owner")
         system_desc = st.text_area("Description", value="", height=60, placeholder="What the system is / does")
         auth_boundary = st.text_area(
-            "Authorization boundary", value="", height=60,
-            placeholder="What's in / out of scope",
+            "Authorization boundary", value="", height=60, placeholder="What's in / out of scope",
         )
         assets_text = st.text_area(
             "Asset inventory", value="", height=90,
@@ -747,12 +733,20 @@ with st.sidebar:
             help="Kinds: host / codebase / cloud_account / image_ref / target_url / config / "
             "database / network. Drives the report's scope-completeness check.",
         )
-    fast_mode = st.checkbox(
-        "⚡ Fast mode (deterministic only)",
-        value=False,
-        help="Skip the AI narrative layer for a near-instant scanner/heuristic-only pass. "
-        "Findings, risk scores, control mappings, coverage and OSCAL still render.",
-    )
+
+    with st.expander("Advanced"):
+        fast_mode = st.checkbox(
+            "⚡ Fast mode (deterministic only)", value=False,
+            help="Skip the AI narrative layer for a near-instant scanner/heuristic-only pass. "
+            "Findings, risk scores, mappings, coverage and OSCAL still render.",
+        )
+        target_frameworks = st.multiselect(
+            "Restrict Q&A corpus to frameworks",
+            options=sorted(set(FRAMEWORK_NAMES.values())),
+            default=[],
+            placeholder="All frameworks",
+            help="Narrows compliance-Q&A retrieval. Leave empty to search everything.",
+        )
 
     st.markdown(
         '<div class="sidebar-section">'
