@@ -126,7 +126,7 @@ python -m auditor.ingest.frameworks_index --fetch-web --rebuild
 streamlit run app.py                                 # opens http://localhost:8501
 ```
 
-Pick the **control baseline** (NIST 800-53B Low/Moderate/High) and declare **scope** (internet-facing, data sensitivity) in the sidebar's *Engagement scope* panel — these set the coverage denominator and tune risk. Refresh the baselines from authoritative NIST OSCAL anytime with `python -m auditor.ingest.baseline_import --fetch --write`.
+Pick the **audit standard** — NIST 800-53B (Low/Moderate/High), **CIS Controls v8.1**, **PCI DSS v4.0.1**, **NIST CSF 2.1**, or **SOC 2 (TSC)** — and declare **scope** (internet-facing, data sensitivity) in the sidebar's *Engagement scope* panel. NIST 800-53B is assessed directly; the other frameworks are assessed by projecting findings through the NIST crosswalk (coverage bounded by mapping completeness, stated in the report). Refresh the NIST baselines from authoritative NIST OSCAL anytime with `python -m auditor.ingest.baseline_import --fetch --write`.
 
 ### Docker (full scanner set: Trivy, Semgrep, Bandit, gitleaks, Checkov, hadolint)
 

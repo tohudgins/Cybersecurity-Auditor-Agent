@@ -28,10 +28,14 @@ log = logging.getLogger(__name__)
 _BASE_DIR = settings.data_dir / "baselines"
 _CATALOG_FILE = _BASE_DIR / "control_catalog.json"
 _BASELINES_FILE = _BASE_DIR / "baselines.json"
+_FRAMEWORKS_FILE = _BASE_DIR / "frameworks.json"
 
 # The curated-crosswalk baseline keeps its historical name; anything else is a
 # named impact baseline resolved from baselines.json.
 CURATED_BASELINE = "auditor-curated"
+# NIST 800-53-anchored baselines (the internal anchor framework). Everything else
+# is a projected framework (CIS/PCI/CSF/SOC2) resolved via the crosswalk.
+NIST_BASELINES = frozenset({CURATED_BASELINE, "low", "moderate", "high"})
 
 
 def _base_id(control_id: str) -> str:
@@ -124,8 +128,75 @@ def _sort_key(cid: str) -> tuple[str, int, int]:
     return (fam, base_n, enh_n)
 
 
+# ── Alternative frameworks (CIS / PCI / CSF / SOC 2) ─────────────────────────
+# These are assessed by projecting findings through the NIST crosswalk, so NIST
+# stays the internal anchor; a framework here just changes the denominator + how
+# results are rendered. See enrichment.mappings.project_to_framework + assessment.
+
+
+@lru_cache(maxsize=1)
+def _frameworks() -> dict:
+    try:
+        return json.loads(_FRAMEWORKS_FILE.read_text(encoding="utf-8")).get("frameworks", {})
+    except (OSError, json.JSONDecodeError) as exc:
+        log.warning("Could not load frameworks: %s", exc)
+        return {}
+
+
+def is_framework_baseline(name: str) -> bool:
+    """True if *name* selects a projected framework (not a NIST 800-53B baseline)."""
+    return name in _frameworks()
+
+
+def framework_keys() -> list[str]:
+    return list(_frameworks().keys())
+
+
+def framework_meta(key: str) -> dict | None:
+    return _frameworks().get(key)
+
+
+def framework_label(key: str) -> str:
+    meta = _frameworks().get(key)
+    return meta.get("label", key) if meta else key
+
+
+def framework_control_ids(key: str) -> list[str]:
+    """The framework's control IDs (the coverage denominator), in file order."""
+    meta = _frameworks().get(key)
+    return list(meta.get("controls", {})) if meta else []
+
+
+def framework_title(key: str, control_id: str) -> str | None:
+    meta = _frameworks().get(key)
+    return meta.get("controls", {}).get(control_id) if meta else None
+
+
+def framework_crosswalk_name(key: str) -> str | None:
+    """The label this framework uses in control_mappings.json (for projection)."""
+    meta = _frameworks().get(key)
+    return meta.get("crosswalk_name") if meta else None
+
+
+def project_framework_id(key: str, sub_id: str) -> str:
+    """Reduce a crosswalk sub-id to the framework's catalog control.
+
+    e.g. CIS ``5.4`` -> ``5`` (before_dot); CSF ``PR.AA-05`` -> ``PR.AA``
+    (before_dash); identity otherwise.
+    """
+    meta = _frameworks().get(key) or {}
+    rule = meta.get("project", "identity")
+    sub_id = (sub_id or "").strip()
+    if rule == "before_dot":
+        return sub_id.split(".")[0]
+    if rule == "before_dash":
+        return sub_id.split("-")[0]
+    return sub_id
+
+
 def reset_cache() -> None:
-    """Test helper: drop the catalog/baseline caches."""
+    """Test helper: drop the catalog/baseline/framework caches."""
     _catalog.cache_clear()
     _baselines_raw.cache_clear()
     baseline_control_ids.cache_clear()
+    _frameworks.cache_clear()

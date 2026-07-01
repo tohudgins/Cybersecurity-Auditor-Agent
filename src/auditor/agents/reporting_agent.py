@@ -184,6 +184,15 @@ def _render_limitations(
             f"{coverage.assessed} of {coverage.total_controls} controls assessed "
             f"({coverage.coverage_pct:.0f}%); {coverage.not_assessed} not assessed."
         )
+        # NIST 800-53 is assessed directly; other standards are projected through
+        # the crosswalk, so their coverage is bounded by mapping completeness.
+        if "800-53" not in coverage.baseline and coverage.baseline != "auditor-curated":
+            lines.append(
+                f"- **{coverage.baseline} coverage is projected** from the NIST "
+                "800-53 crosswalk (a finding's 800-53 anchor → this framework's "
+                "controls). Coverage is bounded by crosswalk completeness — treat "
+                "it as an indicative cross-mapping, not a native audit of this standard."
+            )
 
     # Which process-heavy families went unassessed → explicitly out of automated scope.
     unassessed_process: dict[str, str] = {}

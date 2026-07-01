@@ -1,0 +1,113 @@
+{
+  "_meta": {
+    "description": "Alternative audit standards selectable as the coverage denominator. Each framework's controls are assessed by projecting findings through the NIST 800-53 crosswalk (data/mappings/control_mappings.json): a finding's 800-53 anchor -> the framework's mapped sub-ids -> the framework 'control' via `project`. Catalogs are at each framework's natural control granularity and are publicly enumerable; cross-framework assessment completeness is bounded by crosswalk coverage (surfaced in the report's limitations).",
+    "granularity": "framework-natural (CIS control, PCI requirement, CSF category, SOC 2 criteria group)",
+    "project_rules": {
+      "before_dot": "5.4 -> 5, 10.2.2 -> 10, CC6.1 -> CC6",
+      "before_dash": "PR.AA-05 -> PR.AA",
+      "identity": "id used as-is"
+    }
+  },
+  "frameworks": {
+    "cis": {
+      "label": "CIS Controls v8.1",
+      "crosswalk_name": "CIS Controls v8.1",
+      "project": "before_dot",
+      "controls": {
+        "1": "Inventory and Control of Enterprise Assets",
+        "2": "Inventory and Control of Software Assets",
+        "3": "Data Protection",
+        "4": "Secure Configuration of Enterprise Assets and Software",
+        "5": "Account Management",
+        "6": "Access Control Management",
+        "7": "Continuous Vulnerability Management",
+        "8": "Audit Log Management",
+        "9": "Email and Web Browser Protections",
+        "10": "Malware Defenses",
+        "11": "Data Recovery",
+        "12": "Network Infrastructure Management",
+        "13": "Network Monitoring and Defense",
+        "14": "Security Awareness and Skills Training",
+        "15": "Service Provider Management",
+        "16": "Application Software Security",
+        "17": "Incident Response Management",
+        "18": "Penetration Testing"
+      }
+    },
+    "pci": {
+      "label": "PCI DSS v4.0.1",
+      "crosswalk_name": "PCI DSS v4.0.1",
+      "project": "before_dot",
+      "controls": {
+        "1": "Install and Maintain Network Security Controls",
+        "2": "Apply Secure Configurations to All System Components",
+        "3": "Protect Stored Account Data",
+        "4": "Protect Cardholder Data with Strong Cryptography During Transmission",
+        "5": "Protect All Systems and Networks from Malicious Software",
+        "6": "Develop and Maintain Secure Systems and Software",
+        "7": "Restrict Access to System Components and Cardholder Data by Business Need to Know",
+        "8": "Identify Users and Authenticate Access to System Components",
+        "9": "Restrict Physical Access to Cardholder Data",
+        "10": "Log and Monitor All Access to System Components and Cardholder Data",
+        "11": "Test Security of Systems and Networks Regularly",
+        "12": "Support Information Security with Organizational Policies and Programs"
+      }
+    },
+    "csf": {
+      "label": "NIST CSF 2.1",
+      "crosswalk_name": "NIST CSF 2.1",
+      "project": "before_dash",
+      "controls": {
+        "GV.OC": "Organizational Context",
+        "GV.RM": "Risk Management Strategy",
+        "GV.RR": "Roles, Responsibilities, and Authorities",
+        "GV.PO": "Policy",
+        "GV.OV": "Oversight",
+        "GV.SC": "Cybersecurity Supply Chain Risk Management",
+        "ID.AM": "Asset Management",
+        "ID.RA": "Risk Assessment",
+        "ID.IM": "Improvement",
+        "PR.AA": "Identity Management, Authentication, and Access Control",
+        "PR.AT": "Awareness and Training",
+        "PR.DS": "Data Security",
+        "PR.PS": "Platform Security",
+        "PR.IR": "Technology Infrastructure Resilience",
+        "DE.CM": "Continuous Monitoring",
+        "DE.AE": "Adverse Event Analysis",
+        "RS.MA": "Incident Management",
+        "RS.AN": "Incident Analysis",
+        "RS.CO": "Incident Response Reporting and Communication",
+        "RS.MI": "Incident Mitigation",
+        "RC.RP": "Incident Recovery Plan Execution",
+        "RC.CO": "Incident Recovery Communication"
+      }
+    },
+    "soc2": {
+      "label": "SOC 2 (Trust Services Criteria)",
+      "crosswalk_name": "SOC 2 TSC",
+      "project": "before_dot",
+      "controls": {
+        "CC1": "Control Environment",
+        "CC2": "Communication and Information",
+        "CC3": "Risk Assessment",
+        "CC4": "Monitoring Activities",
+        "CC5": "Control Activities",
+        "CC6": "Logical and Physical Access Controls",
+        "CC7": "System Operations",
+        "CC8": "Change Management",
+        "CC9": "Risk Mitigation",
+        "A1": "Availability",
+        "C1": "Confidentiality",
+        "PI1": "Processing Integrity",
+        "P1": "Privacy — Notice and Communication",
+        "P2": "Privacy — Choice and Consent",
+        "P3": "Privacy — Collection",
+        "P4": "Privacy — Use, Retention, and Disposal",
+        "P5": "Privacy — Access",
+        "P6": "Privacy — Disclosure to Third Parties",
+        "P7": "Privacy — Quality",
+        "P8": "Privacy — Monitoring and Enforcement"
+      }
+    }
+  }
+}

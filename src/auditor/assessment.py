@@ -27,11 +27,18 @@ from auditor.enrichment.catalog import (
     CURATED_BASELINE,
     baseline_control_ids,
     baseline_label,
+    framework_control_ids,
+    framework_crosswalk_name,
+    framework_label,
+    framework_title,
+    is_framework_baseline,
+    project_framework_id,
 )
 from auditor.enrichment.mappings import (
     catalog_control_ids,
     control_title,
     lookup_control,
+    project_to_framework,
 )
 from auditor.models import (
     AuditScope,
@@ -128,26 +135,77 @@ def _method_for(kinds: set[str]) -> str:
     return "test" if kinds & _TEST_KINDS else "examine"
 
 
+def _nist_assessment_maps(baseline: str, findings, kinds):
+    """Assessment maps in NIST 800-53 space (the internal anchor framework)."""
+    findings_by_control: dict[str, list[Finding]] = defaultdict(list)
+    for f in findings:
+        for cid in _finding_controls(f):
+            findings_by_control[cid].append(f)
+    coverage = _coverage_for(kinds)
+    # Assess the baseline plus any control a finding implicated (so out-of-baseline
+    # findings are still surfaced rather than silently dropped).
+    denom = baseline_control_ids(baseline) if baseline not in (CURATED_BASELINE, "") else catalog_control_ids()
+    ordered = sorted(set(denom) | set(findings_by_control))
+    return ordered, findings_by_control, coverage, control_title, _ANCHOR_FRAMEWORK, _baseline_label(baseline)
+
+
+def _framework_assessment_maps(key: str, findings, kinds):
+    """Assessment maps in an alternative framework's space (CIS/PCI/CSF/SOC2).
+
+    Findings and per-kind coverage are projected from their NIST anchors onto the
+    framework's controls via the crosswalk, then reduced to the framework's
+    natural granularity (e.g. CIS safeguard ``5.4`` -> Control ``5``).
+    """
+    cw_name = framework_crosswalk_name(key) or ""
+    catalog = framework_control_ids(key)
+    catalog_set = set(catalog)
+
+    findings_by_control: dict[str, list[Finding]] = defaultdict(list)
+    for f in findings:
+        for sub in project_to_framework(_finding_controls(f), cw_name):
+            fc = project_framework_id(key, sub)
+            if fc in catalog_set:
+                findings_by_control[fc].append(f)
+
+    coverage: dict[str, set[str]] = defaultdict(set)
+    for kind in kinds:
+        for nist in _KIND_COVERAGE.get(kind, ()):
+            for sub in project_to_framework({nist}, cw_name):
+                fc = project_framework_id(key, sub)
+                if fc in catalog_set:
+                    coverage[fc].add(kind)
+
+    title_fn = lambda cid: framework_title(key, cid)  # noqa: E731
+    return catalog, findings_by_control, coverage, title_fn, framework_label(key), framework_label(key)
+
+
 def assess_controls(
     findings: list[Finding],
     artifact_kinds: list[str],
     scope: AuditScope | None = None,
 ) -> tuple[list[ControlAssessment], CoverageSummary]:
-    """Produce a per-control assessment + a coverage roll-up for the run."""
+    """Produce a per-control assessment + a coverage roll-up for the run.
+
+    ``scope.baseline`` selects the audit standard: a NIST 800-53B baseline
+    (``low``/``moderate``/``high``/``auditor-curated``) assessed directly, or an
+    alternative framework (``cis``/``pci``/``csf``/``soc2``) assessed by
+    projecting findings through the NIST crosswalk.
+    """
     scope = scope or AuditScope()
-    coverage = _coverage_for(set(artifact_kinds))
+    baseline = (scope.baseline or CURATED_BASELINE).strip()
+    kinds = set(artifact_kinds)
 
-    findings_by_control: dict[str, list[Finding]] = defaultdict(list)
-    for f in findings:
-        for cid in _finding_controls(f):
-            findings_by_control[cid].append(f)
-
-    # Assess the baseline plus any control a finding implicated (so out-of-baseline
-    # findings are still surfaced rather than silently dropped).
-    control_ids = sorted(set(baseline_controls(scope)) | set(findings_by_control))
+    if is_framework_baseline(baseline):
+        ordered, findings_by_control, coverage, title_fn, framework, label = (
+            _framework_assessment_maps(baseline, findings, kinds)
+        )
+    else:
+        ordered, findings_by_control, coverage, title_fn, framework, label = (
+            _nist_assessment_maps(baseline, findings, kinds)
+        )
 
     assessments: list[ControlAssessment] = []
-    for cid in control_ids:
+    for cid in ordered:
         fs = findings_by_control.get(cid, [])
         covering = coverage.get(cid, set())
 
@@ -177,7 +235,8 @@ def assess_controls(
         assessments.append(
             ControlAssessment(
                 control_id=cid,
-                title=control_title(cid),
+                title=title_fn(cid),
+                framework=framework,
                 status=status,
                 method=method,  # type: ignore[arg-type]
                 rationale=rationale,
@@ -185,7 +244,7 @@ def assess_controls(
             )
         )
 
-    summary = _summarize(_baseline_label(scope.baseline), assessments)
+    summary = _summarize(label, assessments)
     return assessments, summary
 
 

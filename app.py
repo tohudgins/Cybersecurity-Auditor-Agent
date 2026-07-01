@@ -696,13 +696,19 @@ with st.sidebar:
         "NIST 800-53B Moderate": "moderate",
         "NIST 800-53B Low": "low",
         "NIST 800-53B High": "high",
+        "CIS Controls v8.1": "cis",
+        "PCI DSS v4.0.1": "pci",
+        "NIST CSF 2.1": "csf",
+        "SOC 2 (Trust Services Criteria)": "soc2",
         "Auditor-curated (technical)": "auditor-curated",
     }
     baseline_label_choice = st.selectbox(
-        "Control baseline",
+        "Audit standard / baseline",
         options=list(_BASELINE_OPTIONS.keys()),
         index=0,
-        help="The set of controls coverage is measured against. Moderate is the common default for systems handling non-public data.",
+        help="The control set coverage is measured against. NIST 800-53B is assessed "
+        "directly; CIS/PCI/CSF/SOC 2 are assessed by projecting findings through the "
+        "NIST crosswalk (coverage is bounded by mapping completeness).",
     )
     selected_baseline = _BASELINE_OPTIONS[baseline_label_choice]
     internet_facing = st.checkbox(

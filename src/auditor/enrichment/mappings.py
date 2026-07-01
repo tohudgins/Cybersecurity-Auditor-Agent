@@ -214,6 +214,22 @@ def enrich_with_mappings(findings: list[Finding]) -> list[Finding]:
     return findings
 
 
+def project_to_framework(nist_ids, crosswalk_name: str) -> set[str]:
+    """Project NIST 800-53 anchor controls onto another framework's IDs.
+
+    Given a set of 800-53 control IDs and a framework's crosswalk label (e.g.
+    ``"CIS Controls v8.1"``), return the framework's mapped IDs (sub-level, e.g.
+    ``{"5.4", "6.3"}``). Powers the framework-native assessment: NIST stays the
+    internal anchor, and coverage is projected into the chosen standard.
+    """
+    out: set[str] = set()
+    for nid in nist_ids:
+        crosswalk = lookup_control(nid)
+        if crosswalk:
+            out.update(crosswalk.get(crosswalk_name, []) or [])
+    return out
+
+
 def reset_cache() -> None:
     """Test helper: drop all cached mapping tables and the reverse index."""
     _load_mappings.cache_clear()
