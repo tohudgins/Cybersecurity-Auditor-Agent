@@ -630,17 +630,10 @@ with st.sidebar:
     st.markdown(
         '<div class="sidebar-section">'
         '<div class="sidebar-label">Audit target</div>'
-        '<div class="sidebar-help">Attach files, or just say what to audit in the chat '
-        "(e.g. “audit ~/repo”). Cleared after each run.</div>"
+        '<div class="sidebar-help">Attach files with the 📎 in the chat box, or just say '
+        "what to audit (e.g. “audit ~/repo”). Or use a target below.</div>"
         '</div>',
         unsafe_allow_html=True,
-    )
-    uploaded_files = st.file_uploader(
-        "Files",
-        type=["pdf", "tf", "tfvars", "yaml", "yml", "conf", "log", "txt", "json", "cfg"],
-        accept_multiple_files=True,
-        help="Dockerfiles: rename to Dockerfile.txt so the uploader accepts them.",
-        label_visibility="collapsed",
     )
     with st.expander("More input types"):
         pasted_description = st.text_area(
@@ -870,7 +863,7 @@ def _parse_assets(text: str) -> list[Asset]:
     return assets
 
 
-def _build_artifacts() -> list[Artifact]:
+def _build_artifacts(files=None) -> list[Artifact]:
     artifacts: list[Artifact] = []
 
     if pasted_description.strip():
@@ -878,7 +871,7 @@ def _build_artifacts() -> list[Artifact]:
             Artifact(kind="text", name="pasted system description", content=pasted_description.strip())
         )
 
-    for f in uploaded_files or []:
+    for f in files or []:
         kind = _classify_upload(f.name)
         raw = f.read()
         if kind == "policy_pdf":
@@ -1120,15 +1113,29 @@ for msg in st.session_state.messages:
 
 # ---- Input handling --------------------------------------------------------
 
-prompt = st.chat_input("Ask a question, or say what to audit (e.g. 'audit ~/myrepo', 'scan https://site.com', 'audit this machine')…")
-if prompt:
-    # Targets come from the sidebar first; otherwise parse them out of the message
-    # so the user can just *talk* to the agent ("audit /path", "scan https://x").
-    artifacts = _build_artifacts()
+_submission = st.chat_input(
+    "Ask a question, attach files with 📎, or say what to audit (e.g. 'audit ~/myrepo')…",
+    accept_file="multiple",
+    file_type=["pdf", "tf", "tfvars", "yaml", "yml", "conf", "log", "txt", "json", "cfg"],
+)
+# st.chat_input with accept_file returns a submission object (.text / .files); a
+# plain string when files aren't enabled. Normalize to (prompt, chat_files).
+if _submission is not None and not isinstance(_submission, str):
+    prompt = (_submission.text or "").strip()
+    chat_files = list(_submission.files or [])
+else:
+    prompt, chat_files = (_submission or ""), []
+
+if prompt or chat_files:
+    # Targets: files attached in the chat + any sidebar targets, else parse the
+    # message so the user can just *talk* to the agent ("audit /path").
+    artifacts = _build_artifacts(chat_files)
     detected_from_chat = False
-    if not artifacts:
+    if not artifacts and prompt:
         artifacts = parse_targets(prompt)
         detected_from_chat = bool(artifacts)
+    if not prompt:
+        prompt = "Audit the attached file(s)."
 
     user_msg = HumanMessage(content=prompt)
     st.session_state.messages.append(user_msg)
