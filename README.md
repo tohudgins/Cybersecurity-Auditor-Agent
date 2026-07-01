@@ -148,7 +148,7 @@ Named volumes persist the Chroma embeddings, the KEV/EPSS/ATT&CK caches + SQLite
 
 **Regulatory** (per-section chunking): HIPAA Security Rule (45 CFR Part 164).
 
-**Process / reference** (generic chunking): NIST SP 800-37 r2 (RMF), 800-30 r1 (risk), 800-34 r1 (contingency), 800-40 r4 (patch mgmt), 800-61 r3 (incident), 800-63B (identity/auth), 800-92 (log mgmt), 800-137 (continuous monitoring), 800-161 r1 (supply chain), 800-190 (container security), 800-207 (zero trust), IR 7298 r3 (glossary), CISA Zero Trust Maturity Model v2, MITRE ATT&CK Enterprise.
+**Process / reference** (generic chunking): NIST SP 800-37 r2 (RMF), 800-30 r1 (risk), 800-34 r1 (contingency), 800-40 r4 (patch mgmt), 800-61 r3 (incident), 800-63A/B/C (identity/auth), 800-92 (log mgmt), 800-115 (security testing), 800-128 (config mgmt), 800-137 (continuous monitoring), 800-161 r1 (supply chain), 800-190 (container security), 800-207 (zero trust), IR 7298 r3 (glossary), CISA Zero Trust Maturity Model v2, MITRE ATT&CK Enterprise.
 
 **Web-fetched markdown** (cached into `data/web/` on `--fetch-web`): OWASP Top 10 2025, ASVS 5.0, API Security Top 10 2023, Cheat Sheet Series — all CC-BY-SA 4.0.
 
