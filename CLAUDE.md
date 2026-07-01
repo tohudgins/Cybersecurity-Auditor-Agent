@@ -9,10 +9,16 @@ Multi-agent cybersecurity auditor. Two user-facing modes:
 1. **Compliance Q&A** over an indexed corpus of cybersecurity frameworks.
 2. **System auditing** — uploaded configs / logs / policy PDFs / codebase paths, plus **live targets** (cloud account via Prowler, container image via `trivy image`, web URL via Nuclei), run through scanners + LLM analysis, producing a control-coverage assessment, a Markdown report, and OSCAL Assessment-Results + POA&M exports.
 
-Indexed corpus today:
+Indexed corpus today (~40k chunks, 56 frameworks). `data/` is organized into subfolders and the loader (`load_all_pdfs`) walks them recursively; the framework label is resolved by **basename** so the folder doesn't matter:
 
-- **PDFs** (in `data/`): NIST CSF 2.1, NIST SP 800-30 r1, 800-34 r1 (contingency), 800-37 r2 (RMF), 800-40 r4 (patch mgmt), 800-53 r5, **800-53A r5 (assessment procedures)**, 800-61 r3 (incident), 800-63A/B/C (identity/auth), 800-92 (log mgmt), 800-115 (security testing), 800-128 (config mgmt), 800-137 (ISCM), 800-161 r1 (supply chain), 800-171 r3, **800-171A r3 (assessment procedures)**, 800-190 (container security), 800-207 (zero trust), 800-218 (SSDF), NIST IR 7298 r3 (glossary), **HIPAA Security Rule (45 CFR 164)**, CIS Controls v8.1, CISA Zero Trust Maturity Model v2, MITRE ATT&CK Enterprise. The `-53A`/`-171A` assessment-procedure docs power the advisory auditor (real assessment objectives + examine/interview/test methods per control). All are public-domain (NIST/US-government) — added by dropping the PDF in `data/`, registering it in `pdf_loader.FRAMEWORK_NAMES`, and rebuilding.
-- **GitHub markdown** (fetched into `data/web/`): OWASP Top 10 2025, OWASP ASVS 5.0, OWASP API Security Top 10 2023, OWASP Cheat Sheet Series.
+- `data/nist/` — NIST SP 800-30/34/37/40/53/**53A**/61/63A-B-C/82r3/92/115/128/137/161/171/**171A**/172/**172A**/190/207/218, CSF 2.1 (CSWP.30), IR 7298, AI 100-1 (AI RMF). The `-53A`/`-171A`/`-172A` assessment-procedure docs power the advisory auditor.
+- `data/standards/` — CIS Controls v8.1, CISA Zero Trust Maturity Model v2, MITRE ATT&CK Enterprise.
+- `data/regulatory/` — **HIPAA** (45 CFR 164, public), **PCI DSS v4** + **SOC 2 TSC** (licensed → gitignored), GDPR (add manually).
+- `data/cmmc/` — CMMC 2.0 L1/L2/L3 Assessment Guides (DoD, public).
+- `data/benchmarks/cis/` — 17 CIS Benchmarks (AWS/Azure/GCP/M365/Windows/Ubuntu/macOS/Docker/K8s/…). Licensed → gitignored; auto-labeled by `framework_for` (no per-file registration).
+- **GitHub markdown** (`data/web/`): OWASP Top 10 2025, ASVS 5.0, API Security Top 10 2023, Cheat Sheet Series.
+
+**Licensing:** NIST/US-gov + HIPAA/CFR + CMMC are public-domain and committed. **CIS Benchmarks, PCI DSS, and SOC 2 TSC are licensed — user-supplied, indexed locally, and `.gitignore`d (never committed/redistributed).** `enrichment/corpus_coverage.py` still flags frameworks whose *text* isn't indexed (ISO 27001 — copyrighted, GDPR, FedRAMP, …) with an honesty caveat.
 
 The project was restarted from scratch in May 2026; the prior `compliance_agent_tools.py` / `data_preprocessing.py` / Neo4j layer was replaced by the `src/auditor/` package.
 
@@ -160,7 +166,7 @@ Sidebar shows the 3 most recent runs as buttons; a "View all (N) →" button ope
 - **Chunk metadata**: every chunk has `framework`, `source`, `page`. Control-catalog chunks additionally have `control_id`. Sub-chunks of long controls have `chunk_part`.
 - **Audit tools always return `list[Finding]`**. Heuristic findings come first, then LLM findings (de-duplicated). The reporting agent handles ordering and rendering.
 - **Adding an audit tool**: add to `tools/`, wire from `audit_agent._audit_one()`, extend `Artifact.kind` in `models.py` if a new kind is needed, and extend the conftest stub loop if it imports `run_findings_chain` / `retrieve` directly.
-- **Adding a framework PDF**: drop in `data/`, add an entry to `FRAMEWORK_NAMES` in `ingest/pdf_loader.py`, optionally add a control-ID regex to `_CONTROL_PATTERNS`, then `--rebuild`.
+- **Adding a framework PDF**: drop it in the right `data/` subfolder (`nist/` · `standards/` · `regulatory/` · `cmmc/` · `benchmarks/cis/`), add an entry to `FRAMEWORK_NAMES` in `ingest/pdf_loader.py` (CIS Benchmarks are auto-labeled — no entry needed), optionally add a control-ID regex to `_CONTROL_PATTERNS`, then `--rebuild`. If the doc is licensed (CIS/PCI/AICPA), add a `.gitignore` rule. The loader is recursive and resolves labels by basename, so the folder is organizational only. `--rebuild` **appends** — delete `.chromadb/` first for a clean rebuild after moves/renames.
 - **Adding a web markdown source**: append a `WebSource(...)` to `WEB_SOURCES` in `ingest/web_fetcher.py`, optionally add a regex to `_CONTROL_PATTERNS` keyed on the framework label, then `--fetch-web --rebuild`.
 - **Adding a cross-framework mapping**: edit `data/mappings/control_mappings.json` (anchored on NIST 800-53 IDs) or `data/mappings/cwe_mappings.json` (for SAST CWEs). No code change needed. Resolution is bidirectional, so a new anchor entry automatically powers reverse lookups too. `tests/test_mappings.py::test_every_scanner_control_id_is_mapped` fails the build if a tool emits a 800-53 control with no mapping, and `test_cwe_anchors_all_exist_in_control_mappings` enforces that every CWE anchor exists in the crosswalk.
 

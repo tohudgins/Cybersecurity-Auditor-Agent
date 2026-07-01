@@ -75,5 +75,8 @@ data/web/
 # Local notes
 notes.txt
 
-# PCI DSS is PCI-SSC-licensed — user-supplied, not redistributed
-data/PCI-DSS-*.pdf
+# Licensed corpus content — user-supplied, indexed locally, NOT redistributed.
+# (NIST/HIPAA/GDPR/CMMC are public-domain and ARE committed.)
+data/benchmarks/
+data/regulatory/PCI-DSS-*.pdf
+data/regulatory/AICPA_Trust_Services_Criteria*.pdf

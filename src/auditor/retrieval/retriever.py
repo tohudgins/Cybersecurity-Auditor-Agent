@@ -94,6 +94,34 @@ def _framework_filter(frameworks: Sequence[str] | None) -> dict | None:
     return {"framework": {"$in": list(frameworks)}}
 
 
+def _get_all_documents(store, page: int = 2000) -> list[Document]:
+    """Fetch every chunk's text + metadata, paged. A single unbounded
+    ``store.get()`` blows chromadb's SQLite variable limit on a large corpus
+    (40k+ chunks), so page through with limit/offset."""
+    docs: list[Document] = []
+    offset = 0
+    while True:
+        try:
+            raw = store.get(include=["documents", "metadatas"], limit=page, offset=offset)
+        except TypeError:
+            # Fake/in-memory store used in tests may not support limit/offset.
+            raw = store.get()
+            return [
+                Document(page_content=t or "", metadata=m or {})
+                for t, m in zip(raw.get("documents") or [], raw.get("metadatas") or [], strict=False)
+            ]
+        batch = raw.get("documents") or []
+        if not batch:
+            break
+        metas = raw.get("metadatas") or []
+        docs.extend(
+            Document(page_content=t or "", metadata=m or {})
+            for t, m in zip(batch, metas, strict=False)
+        )
+        offset += len(batch)
+    return docs
+
+
 def _build_bm25_index() -> None:
     """Build (or load from disk) an in-memory BM25 index over all Chroma chunks."""
     global _bm25, _bm25_docs
@@ -106,11 +134,7 @@ def _build_bm25_index() -> None:
             _bm25, _bm25_docs = cached
             return
 
-    raw = store.get()  # {"ids": [...], "documents": [...], "metadatas": [...]}
-    docs = [
-        Document(page_content=t or "", metadata=m or {})
-        for t, m in zip(raw.get("documents") or [], raw.get("metadatas") or [], strict=False)
-    ]
+    docs = _get_all_documents(store)
     log.info("Building BM25 over %d chunks", len(docs))
     _bm25_docs = docs
     tokenized = [_tokenize(d.page_content) for d in docs]

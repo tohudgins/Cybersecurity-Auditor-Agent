@@ -146,7 +146,11 @@ Named volumes persist the Chroma embeddings, the KEV/EPSS/ATT&CK caches + SQLite
 
 **Control catalogs** (per-control chunking, exact-ID retrieval): NIST CSF 2.1, NIST SP 800-53 Rev. 5, **SP 800-53A Rev. 5** + **SP 800-171A Rev. 3** (assessment procedures — power the advisory auditor), SP 800-171 Rev. 3, SP 800-218 (SSDF), CIS Controls v8.1.
 
-**Regulatory** (per-section chunking): HIPAA Security Rule (45 CFR Part 164).
+**Regulatory / audit criteria** (per-section chunking): HIPAA Security Rule (45 CFR 164), PCI DSS v4.0.1, SOC 2 Trust Services Criteria, CMMC 2.0 L1/L2/L3 Assessment Guides.
+
+**CIS Benchmarks** (17): AWS/Azure/GCP/Microsoft 365/Google Workspace Foundations, Windows 10/11/Server 2025, Ubuntu, macOS, iPadOS, Docker, Kubernetes, PostgreSQL, VMware ESXi, Chrome.
+
+> **Licensing:** NIST/US-gov, HIPAA/CFR, and CMMC docs are public-domain and included. CIS Benchmarks, PCI DSS, and SOC 2 TSC are **licensed** — supply your own copies in `data/` (they're `.gitignore`d, indexed locally, never redistributed). ISO 27001/27002 is copyrighted and can't be indexed (findings still map to it via the crosswalk).
 
 **Process / reference** (generic chunking): NIST SP 800-37 r2 (RMF), 800-30 r1 (risk), 800-34 r1 (contingency), 800-40 r4 (patch mgmt), 800-61 r3 (incident), 800-63A/B/C (identity/auth), 800-92 (log mgmt), 800-115 (security testing), 800-128 (config mgmt), 800-137 (continuous monitoring), 800-161 r1 (supply chain), 800-190 (container security), 800-207 (zero trust), IR 7298 r3 (glossary), CISA Zero Trust Maturity Model v2, MITRE ATT&CK Enterprise.
 

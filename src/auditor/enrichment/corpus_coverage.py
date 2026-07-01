@@ -18,11 +18,9 @@ import re
 # deliberately conservative (word-boundaried acronyms/names).
 _UNCOVERED: dict[str, re.Pattern[str]] = {
     # PCI DSS v4.0.1 and HIPAA 45 CFR 164 ARE now indexed — omitted on purpose.
-    "SOC 2": re.compile(r"\bSOC[-\s]?2\b", re.IGNORECASE),
+    # Now INDEXED (omitted on purpose): PCI DSS, HIPAA, SOC 2 TSC, CMMC L1/L2/L3.
     "ISO/IEC 27001/27002": re.compile(r"\bISO(?:/IEC)?[-\s]?2700[12]\b", re.IGNORECASE),
-    # HIPAA Security Rule (45 CFR 164) IS now indexed — omitted here on purpose.
-    "GDPR": re.compile(r"\bGDPR\b", re.IGNORECASE),
-    "CMMC": re.compile(r"\bCMMC\b", re.IGNORECASE),
+    "GDPR": re.compile(r"\bGDPR\b", re.IGNORECASE),  # download blocked — add manually
     "FedRAMP": re.compile(r"\bFedRAMP\b", re.IGNORECASE),
     "CCPA": re.compile(r"\bCCPA\b", re.IGNORECASE),
     "SOX (Sarbanes-Oxley)": re.compile(r"\b(SOX|Sarbanes[-\s]?Oxley)\b", re.IGNORECASE),

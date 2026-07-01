@@ -26,21 +26,29 @@ from pypdf import PdfReader
 from auditor.config import settings
 
 FRAMEWORK_NAMES: dict[str, str] = {
-    # Control catalogs (per-control chunking applies)
-    "CIS_Controls__v8.1_Guide__2024_06.pdf": "CIS Controls v8.1",
+    # ── Control catalogs / frameworks (per-control chunking where an ID regex exists) ──
+    "CIS_Controls_v8.1_Guide.pdf": "CIS Controls v8.1",
     "NIST.SP.800-53r5.pdf": "NIST SP 800-53 Rev. 5",
     "NIST.SP.800-53Ar5.pdf": "NIST SP 800-53A Rev. 5 (Assessment Procedures)",
     "NIST.SP.800-171r3.pdf": "NIST SP 800-171 Rev. 3",
     "NIST.SP.800-171Ar3.pdf": "NIST SP 800-171A Rev. 3 (Assessment Procedures)",
+    "NIST.SP.800-172.pdf": "NIST SP 800-172 (Enhanced Security Requirements for CUI)",
+    "NIST.SP.800-172A.pdf": "NIST SP 800-172A (Enhanced Requirements Assessment)",
     "NIST.CSWP.30.pdf": "NIST Cybersecurity Framework 2.1",
     "NIST.SP.800-218.pdf": "NIST SP 800-218 (SSDF)",
     # OWASP ASVS 5.0 is sourced from GitHub markdown (see web_fetcher.py).
-    # Regulatory (per-section chunking)
+    # ── Regulatory / audit criteria (per-section chunking) ──
     "HIPAA-45-CFR-164.pdf": "HIPAA Security Rule (45 CFR Part 164)",
-    # PCI DSS is PCI-SSC-licensed — user-supplied, gitignored (not redistributed).
+    # PCI DSS + SOC 2 TSC are licensed — user-supplied, gitignored (not redistributed).
     "PCI-DSS-v4_0_1.pdf": "PCI DSS v4.0.1",
-    # Process / narrative documents (generic chunking)
-    "nistspecialpublication800-30r1.pdf": "NIST SP 800-30 Rev. 1",
+    "AICPA_Trust_Services_Criteria_2017-2022.pdf": "SOC 2 Trust Services Criteria",
+    "GDPR-Regulation-2016-679.pdf": "GDPR (Regulation (EU) 2016/679)",
+    # ── CMMC assessment guides (DoD, public domain) ──
+    "CMMC_Assessment_Guide_L1.pdf": "CMMC 2.0 Level 1 (Assessment Guide)",
+    "CMMC_Assessment_Guide_L2.pdf": "CMMC 2.0 Level 2 (Assessment Guide)",
+    "CMMC_Assessment_Guide_L3.pdf": "CMMC 2.0 Level 3 (Assessment Guide)",
+    # ── Process / narrative documents (generic chunking) ──
+    "NIST.SP.800-30r1.pdf": "NIST SP 800-30 Rev. 1",
     "NIST.SP.800-37r2.pdf": "NIST SP 800-37 Rev. 2 (RMF)",
     "NIST.SP.800-61r3.pdf": "NIST SP 800-61 Rev. 3 (Incident Response)",
     "NIST.SP.800-63a.pdf": "NIST SP 800-63A (Identity Proofing and Enrollment)",
@@ -50,15 +58,17 @@ FRAMEWORK_NAMES: dict[str, str] = {
     "NIST.SP.800-115.pdf": "NIST SP 800-115 (Security Testing and Assessment)",
     "NIST.SP.800-128.pdf": "NIST SP 800-128 (Security-Focused Configuration Management)",
     "NIST.SP.800-190.pdf": "NIST SP 800-190 (Application Container Security)",
+    "NIST.SP.800-82r3.pdf": "NIST SP 800-82 Rev. 3 (OT / ICS Security)",
     "NIST.SP.800-40r4.pdf": "NIST SP 800-40 Rev. 4 (Enterprise Patch Management)",
     "NIST.SP.800-161r1.pdf": "NIST SP 800-161 Rev. 1 (Supply Chain Risk Management)",
     "NIST.SP.800-137.pdf": "NIST SP 800-137 (Information Security Continuous Monitoring)",
     "NIST.SP.800-92.pdf": "NIST SP 800-92 (Log Management)",
     "NIST.SP.800-34r1.pdf": "NIST SP 800-34 Rev. 1 (Contingency Planning)",
-    "zero_trust_maturity_model_v2_508.pdf": "CISA Zero Trust Maturity Model v2",
+    "NIST.AI.100-1-RMF.pdf": "NIST AI 100-1 (AI Risk Management Framework)",
+    "CISA_Zero_Trust_Maturity_Model_v2.pdf": "CISA Zero Trust Maturity Model v2",
     "NIST.IR.7298r3.pdf": "NIST IR 7298 Rev. 3 (Glossary)",
     # Adversary reference
-    "MITRE_ATTACK_Enterprise_11x17.pdf": "MITRE ATT&CK Enterprise",
+    "MITRE_ATTACK_Enterprise.pdf": "MITRE ATT&CK Enterprise",
 }
 
 # Regex that detects a control-ID header (matched against the start of a line
@@ -85,6 +95,18 @@ _CONTROL_PATTERNS: dict[str, re.Pattern[str]] = {
     ),
     # PCI DSS requirements, e.g. "8.3.1" (sub-requirement) or "8.3".
     "PCI DSS v4.0.1": re.compile(r"^\s*(\d{1,2}\.\d{1,2}(?:\.\d{1,2})?)\b", re.MULTILINE),
+    # SOC 2 Trust Services Criteria, e.g. "CC6.1", "A1.2", "PI1.4", "P3.1".
+    "SOC 2 Trust Services Criteria": re.compile(
+        r"^\s*((?:CC|PI|[ACP])\d\.\d+)\b", re.MULTILINE
+    ),
+    # 800-172 / 172A enhanced CUI requirements share the 800-171 zero-padded form
+    # (e.g. "03.01.01e" / "A.03.01.01e").
+    "NIST SP 800-172 (Enhanced Security Requirements for CUI)": re.compile(
+        r"^\s*((?:A\.)?0?3\.\d{1,2}\.\d{1,2}e?)\b", re.MULTILINE
+    ),
+    "NIST SP 800-172A (Enhanced Requirements Assessment)": re.compile(
+        r"^\s*((?:A\.)?0?3\.\d{1,2}\.\d{1,2}e?)\b", re.MULTILINE
+    ),
     # ASVS 5.0 markdown uses table rows with bold IDs like **1.2.1** and
     # gets generic chapter-level chunking instead, so no per-control regex.
     # OWASP Top 10 markdowns lead each risk with a level-1 heading like
@@ -108,7 +130,15 @@ _PAGE_RE = re.compile(re.escape(_PAGE_OPEN) + r"(\d+)" + re.escape(_PAGE_CLOSE))
 
 
 def framework_for(filename: str) -> str:
-    return FRAMEWORK_NAMES.get(filename, Path(filename).stem)
+    if filename in FRAMEWORK_NAMES:
+        return FRAMEWORK_NAMES[filename]
+    # CIS Benchmarks are numerous and versioned; derive a clean label from the
+    # filename instead of hardcoding each (new benchmarks then "just work").
+    # "CIS_Amazon_Web_Services_Foundations_Benchmark_v7.0.0.pdf"
+    #   -> "CIS Amazon Web Services Foundations Benchmark v7.0.0"
+    if filename.startswith("CIS_") and "Benchmark" in filename:
+        return Path(filename).stem.replace("_", " ")
+    return Path(filename).stem
 
 
 def load_pdf_pages(pdf_path: Path) -> list[Document]:
@@ -134,8 +164,15 @@ def load_pdf_pages(pdf_path: Path) -> list[Document]:
 
 
 def load_all_pdfs(directory: Path | None = None) -> list[Document]:
+    """Recursively load every PDF under *directory* (data/ is organized into
+    nist/ · standards/ · regulatory/ · benchmarks/ subfolders). The framework
+    label is resolved by *basename* (see ``framework_for``), so the folder a PDF
+    lives in doesn't affect its label. The ``web/`` subtree holds markdown only."""
     directory = directory or settings.data_dir
-    pdfs = sorted(p for p in directory.iterdir() if p.suffix.lower() == ".pdf")
+    pdfs = sorted(
+        p for p in directory.rglob("*.pdf")
+        if p.suffix.lower() == ".pdf" and "web" not in p.relative_to(directory).parts
+    )
     pages: list[Document] = []
     for pdf in pdfs:
         pages.extend(load_pdf_pages(pdf))
