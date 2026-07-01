@@ -65,6 +65,22 @@ def is_advisory_request(text: str) -> bool:
     return bool(_ADVISORY_CUE_RE.search(text) and _ORG_CONTROL_RE.search(text))
 
 
+# The auditee describing their current practices (answers to an advisory
+# worksheet) → route to an interview-method assessment rather than a worksheet.
+_RESPONSE_CUE_RE = re.compile(
+    r"\b(we\s|our\s|we've|we have|we do|we don'?t|currently|in place|documented|"
+    r"undocumented|reviewed|tested|not tested|annually|quarterly|monthly|policy|"
+    r"procedure|process|yes[,.]|no[,.]|there is|there are|maintain|implemented)\b",
+    re.IGNORECASE,
+)
+
+
+def looks_like_responses(text: str) -> bool:
+    """True if the message reads like the auditee describing their practices (a
+    substantive answer), not a short request. Gates the advisory *assessment*."""
+    return bool(text) and len(text.split()) >= 15 and bool(_RESPONSE_CUE_RE.search(text))
+
+
 def _classify_path(path: str) -> Artifact | None:
     # Filesystem targets are gated so a shared/hosted deployment can't be used to
     # read the server's files via a chat message.

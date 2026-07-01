@@ -24,7 +24,11 @@ from auditor import suppressions as audit_suppressions  # noqa: E402
 from auditor.agents.graph import AUDITOR_GRAPH  # noqa: E402
 from auditor.diff import serialize_findings, target_key  # noqa: E402
 from auditor.ingest.pdf_loader import FRAMEWORK_NAMES  # noqa: E402
-from auditor.intake import is_advisory_request, parse_targets  # noqa: E402
+from auditor.intake import (  # noqa: E402
+    is_advisory_request,
+    looks_like_responses,
+    parse_targets,
+)
 from auditor.models import Artifact, AuditScope  # noqa: E402
 from auditor.oscal.exporter import to_oscal_assessment_results, to_oscal_poam  # noqa: E402
 from auditor.retrieval.retriever import warm_cache  # noqa: E402
@@ -35,7 +39,9 @@ from auditor.tools.compliance_qa import (  # noqa: E402
 )
 from auditor.tools.control_advisor import (  # noqa: E402
     advise_controls,
+    assess_organizational_controls,
     render_advisory_markdown,
+    render_organizational_assessment_markdown,
 )
 
 # ---- Page setup ------------------------------------------------------------
@@ -1090,20 +1096,45 @@ if prompt:
         if not artifacts:
             last_audit = st.session_state.get("last_audit")
             try:
-                if is_advisory_request(prompt):
+                # Consume any pending advisory topic (from a prior worksheet); if
+                # this message is the auditee's answers, run the assessment.
+                pending_advisory = st.session_state.pop("pending_advisory", None)
+                if pending_advisory and looks_like_responses(prompt) and not is_advisory_request(prompt):
+                    with st.spinner("Assessing organizational controls…"):
+                        assessment = assess_organizational_controls(
+                            pending_advisory, prompt, target_frameworks or None
+                        )
+                    answer = render_organizational_assessment_markdown(assessment)
+                    st.markdown(_render_markdown_with_pills(answer), unsafe_allow_html=True)
+                elif is_advisory_request(prompt):
                     # Organizational/process controls: examined + interviewed, not
-                    # scanned. Produce a RAG-grounded auditor's worksheet.
-                    with st.spinner("Assembling advisory assessment…"):
-                        advisory = advise_controls(prompt, target_frameworks or None)
-                    answer = render_advisory_markdown(advisory)
+                    # scanned. If the message already describes their practices, assess
+                    # (interview method); otherwise produce the worksheet to fill in.
+                    if looks_like_responses(prompt):
+                        with st.spinner("Assessing organizational controls…"):
+                            assessment = assess_organizational_controls(
+                                prompt, prompt, target_frameworks or None
+                            )
+                        answer = render_organizational_assessment_markdown(assessment)
+                    else:
+                        with st.spinner("Assembling advisory worksheet…"):
+                            advisory = advise_controls(prompt, target_frameworks or None)
+                        answer = render_advisory_markdown(advisory)
+                        st.session_state["pending_advisory"] = prompt  # await responses
                     st.markdown(_render_markdown_with_pills(answer), unsafe_allow_html=True)
                 elif last_audit and last_audit.get("report"):
                     answer = st.write_stream(
                         stream_followup_answer(prompt, last_audit["report"], target_frameworks or None)
                     )
                 else:
+                    # Thread the recent conversation (excluding the current turn,
+                    # already appended) so follow-ups resolve against context.
+                    history = [
+                        ("user" if isinstance(m, HumanMessage) else "assistant", str(m.content))
+                        for m in st.session_state.messages[:-1]
+                    ]
                     answer = st.write_stream(
-                        stream_compliance_answer(prompt, target_frameworks or None)
+                        stream_compliance_answer(prompt, target_frameworks or None, history)
                     )
             except Exception as exc:
                 answer = f"_(Error generating response: {exc})_"

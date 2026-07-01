@@ -214,6 +214,43 @@ def enrich_with_mappings(findings: list[Finding]) -> list[Finding]:
     return findings
 
 
+_MAPPING_INTENT_RE = re.compile(
+    r"\b(map(?:ping|ped)?|cross[-\s]?walk|compare|comparison|equivalent|"
+    r"correspond(?:s|ing)?|relate[ds]?|relationship|versus|vs\.?)\b",
+    re.IGNORECASE,
+)
+_NIST53_ID_IN_TEXT = re.compile(r"\b([A-Z]{2}-\d{1,3}(?:\(\d+\))?)\b")
+
+
+def crosswalk_context(query: str) -> str:
+    """For mapping/comparison questions, return the authoritative crosswalk for any
+    NIST 800-53 control IDs named — so the answer grounds on the structured
+    crosswalk, not just retrieved prose. Empty unless the query shows mapping
+    intent AND names a resolvable control."""
+    if not query or not _MAPPING_INTENT_RE.search(query):
+        return ""
+    ids: list[str] = []
+    for m in _NIST53_ID_IN_TEXT.findall(query):
+        u = m.upper()
+        if u not in ids:
+            ids.append(u)
+    lines: list[str] = []
+    for cid in ids[:6]:
+        cw = lookup_control(cid)
+        if not cw:
+            continue
+        parts = [f"{fw}: {', '.join(v)}" for fw, v in cw.items() if v]
+        if parts:
+            title = control_title(cid) or ""
+            lines.append(f"- NIST 800-53 {cid} ({title}) ↔ " + "; ".join(parts))
+    if not lines:
+        return ""
+    return (
+        "Authoritative cross-framework mappings (from the curated crosswalk) — use these "
+        "for any mapping/comparison and cite them as [crosswalk]:\n" + "\n".join(lines) + "\n\n"
+    )
+
+
 def project_to_framework(nist_ids, crosswalk_name: str) -> set[str]:
     """Project NIST 800-53 anchor controls onto another framework's IDs.
 
