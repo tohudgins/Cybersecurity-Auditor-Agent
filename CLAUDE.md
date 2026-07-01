@@ -147,7 +147,7 @@ pytest tests/test_audit_config.py::test_sshd_heuristics_flag_root_login_and_pass
 
 At startup `app.py` calls `retriever.warm_cache()` behind `@st.cache_resource`, so the BM25 index + Chroma client are built/loaded once per server process rather than lazily on the first user question.
 
-Targets come from the sidebar (`_build_artifacts()`) **or** from the chat message itself via `intake.parse_targets(prompt)` — so the user can type `audit ~/repo` / `scan https://x` / `audit this machine`. Routing per message:
+Targets come from **files attached in the chat box** (`st.chat_input(accept_file="multiple")` → `_build_artifacts(files)`), the sidebar's *More input types* expander (pasted text, codebase path, live cloud/image/URL/host targets), **or** the chat message itself via `intake.parse_targets(prompt)` — so the user can type `audit ~/repo` / `scan https://x` / `audit this machine`. The sidebar is consolidated into **Audit target** (📎 hint + input expander) and **Audit settings** (baseline selector + *Scope & risk* SSP expander + *Advanced* fast-mode/corpus expander). Routing per message:
 - **Audit** (sidebar or chat-detected targets present): runs the graph.
 - **Advisory audit** (no targets, `intake.is_advisory_request(prompt)`): a worksheet, or — when the message/`pending_advisory` reply carries the auditee's answers (`intake.looks_like_responses`) — an interview-method **assessment**. Checked *before* follow-up/Q&A.
 - **Follow-up** (no targets, but `st.session_state["last_audit"]` holds the previous report): `stream_followup_answer(question, report_md)` answers grounded in the report + retrieved framework excerpts.

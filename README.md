@@ -1,37 +1,36 @@
 # Cybersecurity Auditor Agent
 
-> A multi-agent GRC analyst behind a chat box: ask compliance questions, audit your systems, and get a control-coverage assessment mapped across NIST, CIS, OWASP, CISA, and MITRE ATT&CK — with OSCAL evidence export.
+> A local, chat-driven GRC auditor. Scan systems, assess organizational controls, and answer compliance questions — grounded in **56 indexed frameworks**, mapped to real controls, and exported as **OSCAL**. An *accelerator* for security work, not a replacement for a qualified assessor.
 
 ![CI](https://github.com/tohudgins/Cybersecurity-Auditor-Agent/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Built with](https://img.shields.io/badge/built%20with-LangGraph%20%7C%20LangChain%20%7C%20Streamlit%20%7C%20OpenAI-orange)
-<!-- After Streamlit Cloud deploy: [![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://YOUR-APP-URL.streamlit.app) -->
 
-A local Streamlit app with three ways to audit, all driven by talking to it:
+It turns *"run nine scanners, reconcile the output, map it to a framework, and write it up"* into one conversation. A Streamlit app with **three ways to audit**:
 
-- **System auditing** (technical) — say what to scan (`audit ~/myrepo`, `scan https://example.com`, `audit aws:prod`, `image:nginx:1.21`, `audit this machine`) or attach files. The agent plans the scope, runs the right tools, and returns a **control-coverage assessment** — not just a findings list — ranked by risk and tied to framework controls.
-- **Advisory audit** (organizational) — ask the agent to assess the *process* controls scanners can't test (`assess our incident response process`, `interview questions for vendor risk management`, `gap analysis for our access-review policy`). It returns a RAG-grounded auditor's worksheet: applicable controls, assessment objective, interview questions, evidence to request, and common gaps — cited.
-- **Compliance Q&A** — cited answers grounded in an indexed framework corpus. Hybrid BM25 + vector retrieval routes exact control-ID queries (`AC-2`, `A01:2025`, `API1:2023`) straight to the matching control.
+- 🔍 **Technical audit** — point it at a repo, config, container image, cloud account, web URL, or host (`audit ~/myrepo`, `scan https://x`, `audit aws:prod`, or attach files with 📎). It runs the right scanners and returns a **control-coverage assessment** — what passed, what failed, and honestly what went *unassessed* — ranked by risk and tied to controls.
+- 🗣️ **Advisory audit** — assess the *organizational / process* controls scanners can't (`assess our incident response process`). Get an auditor's worksheet (objective, interview questions, evidence, common gaps); reply with your answers and it produces an **interview-method assessment** (satisfied / partial / not-satisfied per control) that folds into the coverage.
+- 💬 **Compliance Q&A** — cited, multi-turn answers grounded in the corpus. Framework-scoped retrieval routes "SOC 2 CC6.1" to SOC 2 and "AC-2" to the exact control.
 
-Unlike a bare scanner, it assesses controls the way an assessor does: against a full **NIST SP 800-53B baseline** (Low / Moderate / High — the authoritative 149 / 287 / 370-control sets imported from NIST OSCAL), it reports what passed, what failed, and — honestly — what went **unassessed** because no artifact exercised it, with a coverage percentage. Risk is tuned to your system's internet exposure and data sensitivity; findings split into **deterministic** (scanner/heuristic) vs **AI-assisted** evidence; dispositioned findings (accepted-risk / false-positive) move to an auditable **register**; and every run exports as OSCAL Assessment Results + POA&M with severity-based remediation SLAs.
+**More than a scanner.** It assesses controls the way an assessor does — against a real **NIST SP 800-53B baseline** (or CIS / PCI / CSF / SOC 2 / CMMC) with an honest coverage %, plus a **scope-completeness** check against your declared asset inventory (SSP-lite). Findings are risk-scored 0–100 (tuned to internet exposure + data sensitivity), split into **deterministic vs AI-assisted** evidence, mapped across frameworks (NIST ↔ CSF / CIS / ISO / PCI / SOC 2, and CWE → ASVS → NIST for code), and exported as **OSCAL Assessment Results + POA&M** with remediation SLAs. Accepted risks go to an auditable register; re-audits show a remediation diff.
 
 ---
 
-## What you can use it for
+## Who it's for
 
-| If you are… | Run… | You get back |
+| If you are… | Ask… | You get back |
 |---|---|---|
-| **GRC analyst** (SOC 2 / ISO 27001 / FedRAMP / PCI) | `audit <systems in scope>` | Coverage against a full **NIST 800-53B baseline** + cross-framework mappings + **OSCAL AR & POA&M** (with remediation SLAs) for your GRC platform |
+| **GRC analyst** (SOC 2 / PCI / HIPAA / CMMC / FedRAMP) | `audit <systems in scope>` | Coverage against a real baseline + cross-framework mappings + **OSCAL AR & POA&M** for your GRC platform |
 | **Developer / AppSec** | `audit ~/service-repo` | Dependency CVEs (KEV/EPSS), SAST, IaC/Dockerfile misconfigs, leaked secrets — each tied to CWE → ASVS → NIST, ranked by exploit risk |
-| **DevOps / cloud** | `audit aws:prod`, `image:myapp:1.4` | Live cloud-posture failures (Prowler) and image CVEs (Trivy), mapped to NIST controls — a fast "where are we exposed?" pass |
+| **DevOps / cloud** | `audit aws:prod`, `image:myapp:1.4` | Live cloud-posture failures (Prowler) + image CVEs (Trivy), mapped to controls — a fast "where are we exposed?" pass |
 | **Security eng / pentester** | `scan https://staging.example.com` | A Nuclei DAST pass triaged into the same risk model as code and cloud findings |
-| **Sysadmin / blue-teamer** | `audit this machine` / `audit user@server` | A Lynis OS-hardening review (SSH, auth, firewall, logging, kernel, packages), per host or over SSH |
-| **Learning the standards** | "what does AC-2 require?" | Cited answers from NIST / CIS / OWASP / CISA / MITRE + report-grounded remediation guidance |
+| **Sysadmin / blue-teamer** | `audit this machine` / `audit user@server` | A Lynis OS-hardening review (SSH, auth, firewall, logging, kernel, packages) |
+| **Learning the standards** | `what does AC-2 require?` | Cited answers across NIST / CIS / OWASP / PCI / HIPAA / SOC 2 / CMMC / MITRE |
 
-**Typical flow:** scope → `audit` each target → read the coverage table → ask follow-ups to remediate the top risks → export OSCAL. It compresses the "run six tools, reconcile output, map to a framework, write it up" grind into one conversation. It's an **assistive** tool, not a replacement for a qualified assessor (see [Limitations](#limitations--scope)).
+**Typical flow:** pick the audit standard → attach or name targets → read the coverage table → ask follow-ups or run an advisory assessment → export OSCAL. ⚡ **Fast mode** skips the AI layer for a near-instant scanner-only pass (~3s).
 
-Example finding (rendered Markdown), showing the enrichment a raw scanner doesn't give you:
+Example finding (rendered Markdown) — the enrichment a raw scanner doesn't give you:
 
 ```
 ### 2. [KEV - actively exploited] [CRITICAL] log4j 2.14.1: CVE-2021-44228
@@ -44,121 +43,93 @@ Example finding (rendered Markdown), showing the enrichment a raw scanner doesn'
 - Detection: scanner (deterministic)
 ```
 
-The `examples/` directory ships deliberately-weak artifacts (`sshd_config_weak.conf`, `auth_bruteforce.log`, `terraform_open_sg.tf`, …) so the demo is reproducible.
-
----
-
-## Architecture
-
-```
-   user input → supervisor ──► routes on whether artifacts are attached
-                   │
-        ┌──────────┴───────────────┐
-        ▼                          ▼
-  compliance_node          planning_node → audit_node
-  (hybrid BM25+vector       (adaptive scope:  per-kind tool, run concurrently →
-   retrieval + cited LLM)    pull adjacent     enrich (ATT&CK + KEV/EPSS + mappings)
-        │                    targets in)       → normalize (de-dup + 0–100 risk + rank)
-        │                          │           → assess (per-control verdict + coverage)
-        └───────────┬──────────────┘
-                    ▼
-              reporting_node ──► Markdown report: audit plan + remediation diff +
-                    │            coverage + control assessment + scope & limitations
-                   END           + accepted risks + ranked findings (+ OSCAL AR & POA&M)
-```
-
-LangGraph wiring lives in [`agents/graph.py`](src/auditor/agents/graph.py). Key design points:
-
-- **Adaptive scope planning.** Before scanning, the planning node pulls *safe, local, read-only* adjacent targets into the same run (a codebase's Dockerfile/compose images → container-image scans). *Live, credentialed* targets (e.g. a cloud audit inferred from Terraform) are **recommended, never auto-run**. Planning is deterministic (a parser, not an LLM guess) and a no-op when its scanner is absent.
-- **Deterministic + AI layers.** Each tool pairs regex/scanner heuristics (the evidentiary backbone) with an LLM call (narrative analysis), returning the same `Finding` shape so the report renders uniformly.
-- **Conversational follow-ups.** After an audit, a no-target message (`"explain finding 3"`, `"which controls failed?"`) is answered against the prior report + retrieved framework excerpts, no re-scan needed.
-- **Tuned for speed.** Retrieval caches (Chroma + embeddings `lru_cache`d, BM25 index persisted and warmed at boot); LLM calls right-sized to `reasoning_effort="low"`; scanners and artifacts run concurrently in fault-isolated thread pools; KEV/EPSS/ATT&CK catalogs parsed once into in-memory lookups.
-
----
-
-## Finding enrichment
-
-Every finding is enriched with industry-standard context before rendering:
-
-| Enrichment | Source | What it adds |
-|---|---|---|
-| **CISA KEV** | [CISA KEV catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) | Bumps actively-exploited CVEs to `critical` with a `[KEV]` badge |
-| **EPSS** | [FIRST.org EPSS](https://www.first.org/epss/) | Probability + percentile of exploitation in the next 30 days |
-| **CVSS v3** | NVD via Trivy | Base score + vector + qualitative severity |
-| **MITRE ATT&CK** | Curated rules + [mitre/cti](https://github.com/mitre/cti) STIX bundle | Technique IDs (e.g. brute-force → `T1110.001`) via high-precision rules + phrase matching across ~600 techniques |
-| **Cross-framework mappings** | Curated crosswalk + NIST OLIR importer | **Bidirectional** across NIST 800-53, CSF 2.1, CIS v8.1, ISO 27001:2022, PCI DSS v4.0.1, SOC 2 TSC; SAST findings cross a **CWE → ASVS 5.0 → NIST** bridge |
-| **Risk score (0–100)** | Severity + CVSS + EPSS + KEV, tuned by scope | Deterministic, explainable priority; internet-facing systems lift exposure controls, sensitive data lifts confidentiality controls |
-| **Control assessment** | SP 800-53A model vs **800-53B baseline** | Per-control verdict (Satisfied / Not Satisfied / Partial / Not Assessed) + method (Examine / Test / Interview) + honest coverage % against the selected baseline |
-| **Scope completeness** | System profile (SSP-lite) + asset inventory | Which in-scope **assets** an artifact actually assessed — flags "in scope but not assessed" gaps, so the report reflects a *defined system*, not just some files |
-| **Unified coverage** | Technical (test) + advisory (interview) merge | An advisory assessment's interview verdicts fold into the technical coverage — process controls move from *not-assessed* to assessed, one control-coverage picture |
-| **OSCAL export** | [OSCAL 1.1.2](https://pages.nist.gov/OSCAL/reference/latest/assessment-results/) | **Assessment Results** + **POA&M** JSON, FedRAMP / Trestle / RegScale-ingestible; POA&M items carry owner + severity-based remediation SLA + milestone; all enrichment surfaces as `props` |
-| **Accepted-risk register** | Local triage store | Disposition a finding (accepted-risk / false-positive + rationale); it drops from the active assessment but stays in an auditable section |
-| **Remediation tracking** | Run-to-run diff over local history | Re-audit a target → **Remediation Progress** section: resolved / new / regressed / persisting + an open-issue delta (`7 → 4 ⬇`) |
-
----
-
-## Supported audit inputs
-
-| Kind | Examples | Tooling |
-|---|---|---|
-| `text` | Pasted system / architecture description | LLM + retrieval |
-| `policy_pdf` | Internal security policy PDF | LLM + retrieval, gap report |
-| `config` | `sshd_config`, `nginx.conf`, `Dockerfile` (hadolint), `*.tf` / K8s YAML (Checkov) | regex heuristics + linters |
-| `log` | `auth.log`, syslog, access logs — brute force, post-compromise login, web attacks, log tampering | deterministic heuristics + LLM |
-| `codebase` | Local dir — Trivy (CVEs + IaC misconfig) + Semgrep + Bandit + gitleaks (regex fallback) | concurrent scanners |
-| `cloud_account` | `aws[:profile]`, `gcp`, `azure` — live CSPM via Prowler (your read-only creds) | Prowler |
-| `image_ref` | `nginx:1.21` — `trivy image` for CVEs + misconfigs | Trivy |
-| `target_url` | A URL — live web DAST via Nuclei *(authorized targets only)* | Nuclei |
-| `host` | `localhost` / `user@server` — OS hardening via Lynis (local or over SSH) | Lynis |
-
-Targets come from the sidebar **or** the chat message — `intake.parse_targets()` detects paths, URLs, cloud accounts, images, and hosts (explicit `path:`/`url:`/`image:`/`cloud:`/`host:` prefixes always honored).
+The `examples/` directory ships deliberately-weak artifacts (`sshd_config_weak.conf`, `terraform_open_sg.tf`, …) so the demo is reproducible.
 
 ---
 
 ## Quickstart
 
 ```bash
-git clone <your-repo-url> && cd Cybersecurity-Auditor-Agent
+git clone https://github.com/tohudgins/Cybersecurity-Auditor-Agent && cd Cybersecurity-Auditor-Agent
 python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-cp .env.example .env                                 # set OPENAI_API_KEY
-pip install -e ".[dev,scanners]"                     # quotes required on zsh; bundles Semgrep/Bandit/Checkov
+cp .env.example .env                                 # add your OPENAI_API_KEY
+pip install -e ".[dev,scanners]"                     # core + tests + Bandit (quote for zsh)
 
-# One-time: fetch OWASP markdown + embed all sources into Chroma (~2-3 min)
+# One-time: fetch OWASP sources + embed the corpus into Chroma (~2–3 min)
 python -m auditor.ingest.frameworks_index --fetch-web --rebuild
 
-streamlit run app.py                                 # opens http://localhost:8501
+streamlit run app.py                                 # http://localhost:8501
 ```
 
-Pick the **audit standard** — NIST 800-53B (Low/Moderate/High), **CIS Controls v8.1**, **PCI DSS v4.0.1**, **NIST CSF 2.1**, or **SOC 2 (TSC)** — and declare **scope** (internet-facing, data sensitivity) in the sidebar's *Engagement scope* panel. NIST 800-53B is assessed directly; the other frameworks are assessed by projecting findings through the NIST crosswalk (coverage bounded by mapping completeness, stated in the report). Refresh the NIST baselines from authoritative NIST OSCAL anytime with `python -m auditor.ingest.baseline_import --fetch --write`.
+Then install any [external scanners](#external-scanners) you want — Trivy / Nuclei / gitleaks / hadolint / Lynis via `brew`, and **Semgrep / Checkov / Prowler via `pipx`** (they're heavy apps whose pins conflict with the venv). Each **auto-degrades** to a regex fallback or an info finding if absent, so the app runs without them.
 
-### Docker (full scanner set: Trivy, Semgrep, Bandit, gitleaks, Checkov, hadolint)
+In the app: attach files with **📎** in the chat, pick the **audit standard**, and optionally fill the **System profile (SSP)** under *Audit settings* for the scope-completeness check.
+
+### Docker (bundles Trivy, Semgrep, Checkov, gitleaks, hadolint, Bandit)
 
 ```bash
 export OPENAI_API_KEY=sk-...        # Windows: $env:OPENAI_API_KEY="sk-..."
 docker compose up --build
 ```
 
-Named volumes persist the Chroma embeddings, the KEV/EPSS/ATT&CK caches + SQLite history, and the Semgrep rule cache across restarts. The compose file mounts your `$HOME` read-only so you can scan real local paths; narrow that mount in `docker-compose.yml` if you prefer. See [`docker/`](docker/) for the image build.
+Named volumes persist the Chroma embeddings, KEV/EPSS/ATT&CK caches, SQLite history, and Semgrep rule cache. `$HOME` is mounted read-only so you can scan real local paths (narrow it in `docker-compose.yml` if you prefer).
 
-> **Shared deployments:** set `AUDITOR_ALLOW_LOCAL_TARGETS=false` so users can't read or scan the host filesystem/OS through the chat.
+> **Shared/hosted deployments:** set `AUDITOR_ALLOW_LOCAL_TARGETS=false` so users can't read or scan the host filesystem/OS through the chat.
 
 ---
 
-## Supported frameworks
+## How it works
 
-**Control catalogs** (per-control chunking, exact-ID retrieval): NIST CSF 2.1, NIST SP 800-53 Rev. 5, **SP 800-53A Rev. 5** + **SP 800-171A Rev. 3** (assessment procedures — power the advisory auditor), SP 800-171 Rev. 3, SP 800-218 (SSDF), CIS Controls v8.1.
+```
+   your message → supervisor ──► routes on whether a target is present
+                     │
+        ┌────────────┼─────────────────────────┐
+        ▼            ▼                           ▼
+  Compliance Q&A   Advisory audit        planning → audit → report
+  (framework-scoped (RAG worksheet /     (per-kind scanners, concurrent →
+   hybrid retrieval  interview-method     enrich: ATT&CK + KEV/EPSS + risk +
+   + reranker,        assessment)          cross-framework mappings →
+   multi-turn, cited)                      per-control coverage + scope check →
+                                           Markdown report + OSCAL AR & POA&M)
+```
 
-**Regulatory / audit criteria** (per-section chunking): HIPAA Security Rule (45 CFR 164), PCI DSS v4.0.1, SOC 2 Trust Services Criteria, CMMC 2.0 L1/L2/L3 Assessment Guides.
+- **Hybrid, scoped retrieval.** Chroma vector search + BM25, fused via RRF, re-ranked, and **auto-scoped** to the framework a query names — so at 56 frameworks a "PCI" question gets a PCI answer. Runs concurrently (~240 ms).
+- **Deterministic + AI layers.** Every tool pairs regex/scanner heuristics (the evidentiary backbone) with an LLM pass (narrative), returning one `Finding` shape. The report labels each as scanner/heuristic vs AI-assisted.
+- **Adaptive scope planning.** Safe, local, read-only adjacencies are pulled into the run (a Dockerfile's base image → an image scan); live/credentialed targets are *recommended, never auto-run*.
+- **Tuned for speed.** Concurrent scanners + retrieval, cached indices warmed at boot, `reasoning_effort="low"`, and tiered models (`gpt-5.5` for Q&A, `gpt-5.4-mini` for structured audit/advisory tasks).
 
-**CIS Benchmarks** (17): AWS/Azure/GCP/Microsoft 365/Google Workspace Foundations, Windows 10/11/Server 2025, Ubuntu, macOS, iPadOS, Docker, Kubernetes, PostgreSQL, VMware ESXi, Chrome.
+LangGraph wiring lives in [`agents/graph.py`](src/auditor/agents/graph.py); architecture and module layout are in [CLAUDE.md](CLAUDE.md).
 
-> **Licensing:** NIST/US-gov, HIPAA/CFR, and CMMC docs are public-domain and included. CIS Benchmarks, PCI DSS, and SOC 2 TSC are **licensed** — supply your own copies in `data/` (they're `.gitignore`d, indexed locally, never redistributed). ISO 27001/27002 is copyrighted and can't be indexed (findings still map to it via the crosswalk).
+---
 
-**Process / reference** (generic chunking): NIST SP 800-37 r2 (RMF), 800-30 r1 (risk), 800-34 r1 (contingency), 800-40 r4 (patch mgmt), 800-61 r3 (incident), 800-63A/B/C (identity/auth), 800-92 (log mgmt), 800-115 (security testing), 800-128 (config mgmt), 800-137 (continuous monitoring), 800-161 r1 (supply chain), 800-190 (container security), 800-207 (zero trust), IR 7298 r3 (glossary), CISA Zero Trust Maturity Model v2, MITRE ATT&CK Enterprise.
+## Audit inputs & enrichment
 
-**Web-fetched markdown** (cached into `data/web/` on `--fetch-web`): OWASP Top 10 2025, ASVS 5.0, API Security Top 10 2023, Cheat Sheet Series — all CC-BY-SA 4.0.
+| Input | Tooling |
+|---|---|
+| `config` — sshd/nginx, Dockerfile (hadolint), Terraform/K8s (Checkov) | regex heuristics + linters |
+| `log` — auth/syslog/access (brute force, post-compromise, web attacks, tampering) | deterministic heuristics + LLM |
+| `codebase` — a local dir | Trivy (CVEs + IaC) + Semgrep + Bandit + gitleaks, concurrent |
+| `image_ref` — `nginx:1.21` | `trivy image` (CVEs + misconfig) |
+| `cloud_account` — `aws[:profile]` / `gcp` / `azure` | Prowler (your read-only creds) |
+| `target_url` — a URL *(authorized only)* | Nuclei DAST |
+| `host` — `localhost` / `user@server` | Lynis OS hardening |
+| `policy_pdf` / `text` — a policy or system description | LLM + retrieval |
 
-PDFs go in `data/` (free from NIST CSRC, CIS, and CISA); missing ones are skipped. See [CLAUDE.md](CLAUDE.md) for the per-file list and how to add a framework or mapping. The crosswalk ([`control_mappings.json`](data/mappings/control_mappings.json)) is data-driven — no code change to extend — and can be augmented from NIST's official OLIR exports via `python -m auditor.ingest.olir_import --fetch --merge`.
+Each finding is enriched with **CISA KEV**, **EPSS**, **CVSS v3**, **MITRE ATT&CK**, a **0–100 risk score** (scope-tuned), **cross-framework mappings**, and a **per-control assessment** (Satisfied / Not Satisfied / Partial / Not Assessed × Test / Examine / Interview). Every run exports **OSCAL 1.1.2** Assessment Results + POA&M (owners, severity-based SLAs, milestones).
+
+---
+
+## Frameworks & corpus (~40k chunks, 56 frameworks)
+
+- **Control catalogs / assessment procedures:** NIST CSF 2.1, SP 800-53 r5 **+ 800-53A** (assessment), 800-171 r3 **+ 800-171A**, 800-172 / 172A, 800-218 (SSDF), CIS Controls v8.1.
+- **Regulatory / audit criteria:** HIPAA Security Rule (45 CFR 164), PCI DSS v4.0.1, SOC 2 Trust Services Criteria, CMMC 2.0 L1/L2/L3.
+- **17 CIS Benchmarks:** AWS/Azure/GCP/M365/Google Workspace, Windows 10/11/Server, Ubuntu, macOS, iPadOS, Docker, Kubernetes, PostgreSQL, VMware ESXi, Chrome.
+- **Guidance:** NIST SP 800-30/34/37/40/61/63A-B-C/82/92/115/128/137/161/190/207, AI 100-1 (AI RMF), CISA ZTMM, MITRE ATT&CK.
+- **OWASP** (web markdown): Top 10 2025, ASVS 5.0, API Top 10 2023, Cheat Sheets.
+
+**Selectable audit standard:** NIST 800-53B is assessed directly; CIS / PCI / CSF / SOC 2 are assessed by projecting findings through the NIST crosswalk (coverage bounded by mapping completeness, stated in the report). Refresh the authoritative baselines anytime: `python -m auditor.ingest.baseline_import --fetch --write`.
+
+> **Licensing:** NIST/US-gov, HIPAA/CFR, and CMMC are public-domain and included. **CIS Benchmarks, PCI DSS, and SOC 2 TSC are licensed** — drop your own copies in `data/` (they're `.gitignore`d, indexed locally, never redistributed). ISO 27001/27002 is copyrighted and can't be indexed — findings still map to it via the crosswalk, and the tool says so when a framework's text isn't indexed.
 
 ---
 
@@ -166,61 +137,58 @@ PDFs go in `data/` (free from NIST CSRC, CIS, and CISA); missing ones are skippe
 
 The agent shells out to real scanners, so it treats its own inputs as untrusted:
 
-- **No shell** — external tools run via `subprocess.run([...])` argument lists, never `shell=True`.
-- **Argument-injection hardening** — SSH host specs, image refs, and cloud profiles are validated and may not begin with `-` (blocks `-oProxyCommand=…`-style RCE); image refs pass after a `--` separator.
-- **Filesystem/OS gating** — `AUDITOR_ALLOW_LOCAL_TARGETS=false` disables codebase/host/chat-file targets for shared hosting; chat-referenced files are size-capped.
-- **Read-only by design** — scanners run in read-only modes; cloud auditing uses your existing read-only SDK credentials, which the app never handles or stores.
-- **Auto-runs only safe local scans** — scope planning auto-expands *only* into local, read-only assessments. Anything touching a live account, host, or external service is **recommended, never auto-launched** — it needs your explicit authorization.
-- **Graceful degradation** — a missing scanner becomes an info finding, never a crash.
+- **No shell** — tools run via `subprocess.run([...])` argument lists, never `shell=True`.
+- **Argument-injection hardening** — SSH host specs, image refs, and cloud profiles are validated and may not begin with `-`; image refs pass after `--`.
+- **Filesystem/OS gating** — `AUDITOR_ALLOW_LOCAL_TARGETS=false` disables codebase/host/chat-file targets for shared hosting; chat files are size-capped.
+- **Read-only by design** — scanners run read-only; cloud auditing uses your existing read-only credentials, which the app never stores.
+- **Only safe local scans auto-run** — anything touching a live account/host/service is recommended, never auto-launched.
 
 Only audit systems you are authorized to assess.
 
 ---
 
-## Limitations & scope
+## Limitations
 
-Stated plainly, because a GRC tool that overstates its rigor is worse than one that doesn't:
+Stated plainly — a GRC tool that overstates its rigor is worse than one that doesn't:
 
-- **Baselines are complete; cross-framework mappings are informative.** Coverage is measured against the authoritative 800-53B baselines (imported from NIST OSCAL). The *cross-framework crosswalk* (CSF/CIS/ISO/PCI/SOC 2), however, covers only the ~40 anchor controls + ~35 CWEs this agent exercises — confirm cross-standard compliance decisions against the official source.
-- **Technical controls only.** Automated scanning tests configuration and code; it cannot examine governance evidence or interview personnel, so management/operational control families (PM, PS, PE, AT, …) are reported *not-assessed* and flagged in the report's **Scope & Limitations** section. This is a technical-control assessment, not a full audit.
-- **LLM findings are assistive.** The deterministic scanners + heuristics are the evidentiary backbone; the LLM layer adds narrative and can produce false positives/negatives. Triage them (accepted-risk / false-positive register), don't auto-accept.
-- **On-demand, not continuous.** A deliberate design choice: it assesses what you point it at, when you run it. The run-to-run diff tracks posture over time, but there's no scheduling or unattended evidence collection — the OSCAL export exists to feed a GRC system that does.
-- **Live scanning needs prerequisites + authorization.** Prowler needs read-only cloud creds; Nuclei must target only systems you may test; Lynis needs SSH + Lynis on the host.
-- **Single-user, local-first.** Audit history is a local SQLite DB — no multi-tenant RBAC yet.
+- **An accelerator, not an audit of record.** It gets *some* of the work done fast; a qualified assessor validates and signs.
+- **Technical + interview, not full evidence sampling.** Scanners test config/code; the advisory path examines/interviews from your stated practices. It doesn't collect evidence over a period or sample populations.
+- **LLM findings are assistive** — deterministic scanners are the backbone; triage AI-assisted findings (there's an accepted-risk/false-positive register), don't auto-accept.
+- **Point-in-time, not continuous** — a deliberate choice. The run-to-run diff tracks posture; OSCAL export feeds a system that does continuous monitoring.
+- **Cross-framework mappings are informative** (curated crosswalk, ~40 anchor controls); confirm cross-standard decisions against the source.
+- **Single-user, local-first** — history is a local SQLite DB, no multi-tenant RBAC.
 
 ---
 
 ## Tech stack
 
-**[LangGraph](https://github.com/langchain-ai/langgraph)** (agent state machine) · **[LangChain](https://github.com/langchain-ai/langchain)** (retrieval/prompts/structured output) · **[ChromaDB](https://github.com/chroma-core/chroma)** + **[rank-bm25](https://github.com/dorianbrown/rank_bm25)** (hybrid retrieval via RRF) · **[OpenAI](https://platform.openai.com/)** (`gpt-5.5` Q&A / `gpt-5.4-mini` audit + summary, `text-embedding-3-small`; all `.env`-overridable) · **[Streamlit](https://streamlit.io/)** (UI) · **[Pydantic](https://docs.pydantic.dev/)** (typed models) · **[pypdf](https://github.com/py-pdf/pypdf)**.
+**[LangGraph](https://github.com/langchain-ai/langgraph)** (agent state machine) · **[LangChain](https://github.com/langchain-ai/langchain)** · **[ChromaDB](https://github.com/chroma-core/chroma)** + **[rank-bm25](https://github.com/dorianbrown/rank_bm25)** (hybrid retrieval via RRF) · **[OpenAI](https://platform.openai.com/)** (`gpt-5.5` / `gpt-5.4-mini`, `text-embedding-3-small`; all `.env`-overridable) · **[Streamlit](https://streamlit.io/)** · **[Pydantic](https://docs.pydantic.dev/)**.
 
-### External scanners (auto-degraded if missing)
+### External scanners
 
-| Scanner | Audit kind | Install |
+| Scanner | Kind | Install |
 |---|---|---|
-| [Trivy](https://aquasecurity.github.io/trivy/) | `codebase` / `image_ref` (CVEs + IaC misconfig) | `brew install trivy` |
-| [Semgrep](https://semgrep.dev/) | `codebase` (multi-language SAST) | `pipx install semgrep` (isolate it — its pins conflict with the venv) |
-| [Bandit](https://bandit.readthedocs.io/) | `codebase` (Python SAST) | `pip install bandit` |
-| [gitleaks](https://github.com/gitleaks/gitleaks) | `codebase` (secrets) | `brew install gitleaks` — regex fallback if missing |
-| [Checkov](https://www.checkov.io/) | `config` (Terraform / K8s) | `pipx install checkov` (isolate it — its `boto3` pin conflicts with the venv) |
-| [hadolint](https://github.com/hadolint/hadolint) | `config` (Dockerfile) | `brew install hadolint` — regex fallback if missing |
-| [Prowler](https://github.com/prowler-cloud/prowler) | `cloud_account` (live CSPM) | `pipx install prowler --python python3.12` (isolate it — a plain `pip install` into the venv pins pydantic v1 and breaks the stack) |
-| [Nuclei](https://github.com/projectdiscovery/nuclei) | `target_url` (live DAST) | `brew install nuclei` |
-| [Lynis](https://github.com/CISOfy/lynis) | `host` (OS hardening) | `brew install lynis` / `apt install lynis` |
+| [Trivy](https://aquasecurity.github.io/trivy/) | `codebase` / `image_ref` | `brew install trivy` |
+| [Semgrep](https://semgrep.dev/) | `codebase` (SAST) | `pipx install semgrep` |
+| [Bandit](https://bandit.readthedocs.io/) | `codebase` (Python SAST) | bundled in `.[scanners]` |
+| [gitleaks](https://github.com/gitleaks/gitleaks) | `codebase` (secrets) | `brew install gitleaks` |
+| [Checkov](https://www.checkov.io/) | `config` (Terraform/K8s) | `pipx install checkov` |
+| [hadolint](https://github.com/hadolint/hadolint) | `config` (Dockerfile) | `brew install hadolint` |
+| [Prowler](https://github.com/prowler-cloud/prowler) | `cloud_account` (CSPM) | `pipx install prowler --python python3.12` |
+| [Nuclei](https://github.com/projectdiscovery/nuclei) | `target_url` (DAST) | `brew install nuclei` |
+| [Lynis](https://github.com/CISOfy/lynis) | `host` (hardening) | `brew install lynis` / `apt install lynis` |
 
-A missing scanner emits an info finding with the install hint and falls back to regex heuristics — the demo still runs.
+Semgrep, Checkov, and Prowler are **pipx-isolated** (their dependency pins conflict with the app's stack); each is only ever called as a CLI. Any missing scanner emits an info finding and falls back to regex heuristics.
 
 ---
 
 ## Tests
 
 ```bash
-pytest          # full suite, fully offline (LLM, retriever, KEV, EPSS, STIX all stubbed — no API key)
+pytest          # ~290 tests, fully offline (LLM, retrieval, KEV, EPSS, STIX stubbed — no API key)
 ```
 
-250+ tests. CI runs `pytest` + `ruff` on Python 3.10/3.11/3.12 plus a gitleaks job on every push and PR. Architecture, module layout, and contribution conventions are documented in [CLAUDE.md](CLAUDE.md).
-
----
+CI runs `pytest` + `ruff` on Python 3.10 / 3.11 / 3.12 plus a gitleaks job on every push and PR. See [CLAUDE.md](CLAUDE.md) for architecture, module layout, and how to add a framework, mapping, or audit tool.
 
 ## License
 
