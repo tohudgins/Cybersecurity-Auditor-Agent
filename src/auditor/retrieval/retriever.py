@@ -15,12 +15,15 @@ import logging
 import pickle
 import re
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 
+import numpy as np
 from langchain_core.documents import Document
 from rank_bm25 import BM25Okapi
 
 from auditor.config import settings
 from auditor.ingest.frameworks_index import get_vectorstore
+from auditor.retrieval.framework_router import detect_frameworks
 
 log = logging.getLogger(__name__)
 
@@ -151,8 +154,13 @@ def _bm25_search(query: str, k: int) -> list[Document]:
         _build_bm25_index()
     if _bm25 is None or not _bm25_docs:
         return []
-    scores = _bm25.get_scores(_tokenize(query))
-    top_idx = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[: k * 3]
+    scores = np.asarray(_bm25.get_scores(_tokenize(query)))
+    n = min(k * 3, len(scores))
+    # argpartition finds the top-n in O(N) instead of a full O(N log N) Python
+    # sort over all ~40k scores (the retrieval-latency hot spot), then we sort
+    # just those n.
+    part = np.argpartition(scores, -n)[-n:]
+    top_idx = part[np.argsort(scores[part])[::-1]]
     return [_bm25_docs[i] for i in top_idx if scores[i] > 0]
 
 
@@ -214,27 +222,78 @@ def _reciprocal_rank_fusion(
     return [docs[key] for key, _ in ranked[:k]]
 
 
+def _rerank(
+    query: str,
+    docs: list[Document],
+    boost_frameworks: Sequence[str] | None,
+    k: int,
+) -> list[Document]:
+    """Re-order the fused candidate pool with cheap, high-signal features, then
+    trim to k. No model call — precision without latency:
+
+    * base = the fusion rank (preserve BM25+vector agreement);
+    * +exact control-ID match (a query naming AC-2 wants the AC-2 chunk on top);
+    * +framework match (when the query named a framework);
+    * +lexical overlap with the query.
+    """
+    q_tokens = set(_tokenize(query))
+    q_ids = {c.upper() for c in _CONTROL_ID_LIKE.findall(query)}
+    boost = set(boost_frameworks or [])
+
+    scored: list[tuple[float, Document]] = []
+    for rank, d in enumerate(docs):
+        s = 1.0 / (rank + 1)
+        meta = d.metadata
+        if boost and meta.get("framework") in boost:
+            s += 1.0  # a named-framework match is decisive over raw fusion rank
+        cid = (meta.get("control_id") or "").upper()
+        if cid and q_ids and any(cid == qi or cid in qi or qi in cid for qi in q_ids):
+            s += 1.5
+        if q_tokens:
+            d_tokens = set(_tokenize(d.page_content[:500]))
+            s += 0.4 * len(q_tokens & d_tokens) / len(q_tokens)
+        scored.append((s, d))
+    scored.sort(key=lambda sd: sd[0], reverse=True)
+    return [d for _, d in scored[:k]]
+
+
 def retrieve(
     query: str,
     frameworks: Sequence[str] | None = None,
     k: int | None = None,
 ) -> list[Document]:
-    """Hybrid top-k retrieval. If the query names an exact control ID, those
-    chunks float to the top of the ranking via RRF.
+    """Hybrid (vector + BM25) top-k retrieval, framework-scoped and re-ranked.
+
+    Vector similarity and BM25 keyword search are fused via RRF; if the query
+    names an exact control ID those chunks float up. When the caller doesn't pin
+    ``frameworks``, we auto-scope to the framework(s) the query names (so a
+    "SOC 2 CC6.1" question isn't drowned out by other standards). A cheap
+    re-rank orders the fused pool before trimming to k.
     """
     k = k or settings.retrieval_k
 
-    exact = _exact_control_lookup(query)
-    vec = _vector_search(query, k=k * 2, frameworks=frameworks)
-    bm25 = _bm25_search(query, k=k * 2)
+    # Scope to the framework(s) the query explicitly names (unless caller pinned).
+    if not frameworks:
+        frameworks = detect_frameworks(query) or None
 
-    # Apply framework filter to BM25 results post-hoc (BM25 has no filter).
+    # The three runs are independent — vector search waits on a network embed
+    # while BM25 is CPU-bound — so run them concurrently (wall-clock ≈ the slowest,
+    # not their sum).
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        f_exact = pool.submit(_exact_control_lookup, query)
+        f_vec = pool.submit(_vector_search, query, k * 2, frameworks)
+        f_bm25 = pool.submit(_bm25_search, query, k * 2)
+        exact, vec, bm25 = f_exact.result(), f_vec.result(), f_bm25.result()
+
+    # Apply framework filter to BM25 + exact results post-hoc (BM25 has no filter).
     if frameworks:
         fw_set = set(frameworks)
         bm25 = [d for d in bm25 if d.metadata.get("framework") in fw_set]
         exact = [d for d in exact if d.metadata.get("framework") in fw_set]
 
-    return _reciprocal_rank_fusion([exact, vec, bm25], k=k)
+    # Fuse a larger pool, then re-rank down to k.
+    pool = _reciprocal_rank_fusion([exact, vec, bm25], k=k * 3)
+    return _rerank(query, pool, frameworks, k)
 
 
 def format_docs(docs: Sequence[Document]) -> str:
