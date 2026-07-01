@@ -29,7 +29,9 @@ FRAMEWORK_NAMES: dict[str, str] = {
     # Control catalogs (per-control chunking applies)
     "CIS_Controls__v8.1_Guide__2024_06.pdf": "CIS Controls v8.1",
     "NIST.SP.800-53r5.pdf": "NIST SP 800-53 Rev. 5",
+    "NIST.SP.800-53Ar5.pdf": "NIST SP 800-53A Rev. 5 (Assessment Procedures)",
     "NIST.SP.800-171r3.pdf": "NIST SP 800-171 Rev. 3",
+    "NIST.SP.800-171Ar3.pdf": "NIST SP 800-171A Rev. 3 (Assessment Procedures)",
     "NIST.CSWP.30.pdf": "NIST Cybersecurity Framework 2.1",
     "NIST.SP.800-218.pdf": "NIST SP 800-218 (SSDF)",
     # OWASP ASVS 5.0 is sourced from GitHub markdown (see web_fetcher.py).
@@ -47,7 +49,17 @@ FRAMEWORK_NAMES: dict[str, str] = {
 # via re.MULTILINE). Only frameworks listed here get per-control chunking.
 _CONTROL_PATTERNS: dict[str, re.Pattern[str]] = {
     "NIST SP 800-53 Rev. 5": re.compile(r"^\s*([A-Z]{2}-\d{1,2}(?:\(\d{1,2}\))?)\s", re.MULTILINE),
-    "NIST SP 800-171 Rev. 3": re.compile(r"^\s*(3\.\d{1,2}\.\d{1,2})\b", re.MULTILINE),
+    # 800-53A assessment procedures are headed by the same control IDs, so
+    # per-control chunking lets a query hit the exact assessment objective.
+    "NIST SP 800-53A Rev. 5 (Assessment Procedures)": re.compile(
+        r"^\s*([A-Z]{2}-\d{1,2}(?:\(\d{1,2}\))?)\s", re.MULTILINE
+    ),
+    # 800-171 r3 / 171A r3 use the zero-padded "03.01.04" form (assessment
+    # objectives are "A.03.01.04"); older text used "3.1.1". Match both.
+    "NIST SP 800-171 Rev. 3": re.compile(r"^\s*((?:A\.)?0?3\.\d{1,2}\.\d{1,2})\b", re.MULTILINE),
+    "NIST SP 800-171A Rev. 3 (Assessment Procedures)": re.compile(
+        r"^\s*((?:A\.)?0?3\.\d{1,2}\.\d{1,2})\b", re.MULTILINE
+    ),
     "NIST Cybersecurity Framework 2.1": re.compile(r"^\s*([A-Z]{2}\.[A-Z]{2}-\d{2})\b", re.MULTILINE),
     "NIST SP 800-218 (SSDF)": re.compile(r"^\s*((?:PO|PS|PW|RV)\.\d+\.\d+)\b", re.MULTILINE),
     "CIS Controls v8.1": re.compile(r"^\s*(\d{1,2}\.\d{1,2})\s+[A-Z]", re.MULTILINE),

@@ -7,6 +7,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_openai import ChatOpenAI
 
 from auditor.config import settings
+from auditor.enrichment.corpus_coverage import caveat_for
 from auditor.prompts.compliance import COMPLIANCE_QA_PROMPT, FOLLOWUP_QA_PROMPT
 from auditor.retrieval.retriever import format_docs, retrieve
 
@@ -27,7 +28,9 @@ def answer_compliance_question(
         reasoning_effort=settings.synthesis_reasoning_effort,
     )
     chain = COMPLIANCE_QA_PROMPT | llm | StrOutputParser()
-    return chain.invoke({"context": format_docs(docs), "question": question})
+    answer = chain.invoke({"context": format_docs(docs), "question": question})
+    caveat = caveat_for(question)
+    return f"{caveat}\n\n{answer}" if caveat else answer
 
 
 def stream_compliance_answer(
@@ -42,6 +45,10 @@ def stream_compliance_answer(
     if not docs:
         yield _NO_DOCS_MSG
         return
+
+    caveat = caveat_for(question)
+    if caveat:
+        yield caveat + "\n\n"
 
     llm = ChatOpenAI(
         model=settings.synthesis_model,
@@ -64,6 +71,10 @@ def stream_followup_answer(
     """
     docs = retrieve(question, frameworks=frameworks)
     context = format_docs(docs) if docs else "(no additional framework excerpts retrieved)"
+
+    caveat = caveat_for(question)
+    if caveat:
+        yield caveat + "\n\n"
 
     llm = ChatOpenAI(
         model=settings.synthesis_model,

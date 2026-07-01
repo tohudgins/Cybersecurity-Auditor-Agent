@@ -19,6 +19,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
 from auditor.config import settings
+from auditor.enrichment.corpus_coverage import caveat_for
 from auditor.prompts.advisory import CONTROL_ADVISORY_PROMPT
 from auditor.retrieval.retriever import format_docs, retrieve
 
@@ -49,6 +50,9 @@ class ControlAdvisory(BaseModel):
     citations: list[str] = Field(
         default_factory=list, description="Distinct [Framework, p.N] sources relied on."
     )
+    coverage_note: str = Field(
+        default="", description="Honesty caveat when the topic names an un-indexed framework."
+    )
 
 
 def advise_controls(
@@ -73,6 +77,7 @@ def advise_controls(
     advisory: ControlAdvisory = chain.invoke({"context": format_docs(docs), "topic": topic})
     if not advisory.topic:
         advisory.topic = topic
+    advisory.coverage_note = caveat_for(topic)
     return advisory
 
 
@@ -89,6 +94,10 @@ def render_advisory_markdown(advisory: ControlAdvisory | None) -> str:
         "_Organizational / process controls are **examined and interviewed**, not scanned "
         "(NIST SP 800-53A). Use this worksheet to assess them manually; it complements the "
         "technical scan._\n",
+    ]
+    if advisory.coverage_note:
+        parts.append(advisory.coverage_note + "\n")
+    parts += [
         "**Applicable controls:** "
         + (", ".join(advisory.applicable_controls) if advisory.applicable_controls else "—"),
         f"\n**Assessment objective:** {advisory.objective}\n",

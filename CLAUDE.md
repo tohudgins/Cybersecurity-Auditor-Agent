@@ -11,7 +11,7 @@ Multi-agent cybersecurity auditor. Two user-facing modes:
 
 Indexed corpus today:
 
-- **PDFs** (in `data/`): NIST CSF 2.1, NIST SP 800-30 r1, 800-37 r2, 800-53 r5, 800-61 r3, 800-171 r3, 800-218 (SSDF), NIST IR 7298 r3 (glossary), CIS Controls v8.1, CISA Zero Trust Maturity Model v2, MITRE ATT&CK Enterprise.
+- **PDFs** (in `data/`): NIST CSF 2.1, NIST SP 800-30 r1, 800-37 r2, 800-53 r5, **800-53A r5 (assessment procedures)**, 800-61 r3, 800-171 r3, **800-171A r3 (assessment procedures)**, 800-218 (SSDF), NIST IR 7298 r3 (glossary), CIS Controls v8.1, CISA Zero Trust Maturity Model v2, MITRE ATT&CK Enterprise. The `-53A`/`-171A` assessment-procedure docs directly power the advisory auditor (real assessment objectives + examine/interview/test methods per control).
 - **GitHub markdown** (fetched into `data/web/`): OWASP Top 10 2025, OWASP ASVS 5.0, OWASP API Security Top 10 2023, OWASP Cheat Sheet Series.
 
 The project was restarted from scratch in May 2026; the prior `compliance_agent_tools.py` / `data_preprocessing.py` / Neo4j layer was replaced by the `src/auditor/` package.

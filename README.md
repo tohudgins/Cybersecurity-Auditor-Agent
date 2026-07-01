@@ -144,7 +144,7 @@ Named volumes persist the Chroma embeddings, the KEV/EPSS/ATT&CK caches + SQLite
 
 ## Supported frameworks
 
-**Control catalogs** (per-control chunking, exact-ID retrieval): NIST CSF 2.1, NIST SP 800-53 Rev. 5, SP 800-171 Rev. 3, SP 800-218 (SSDF), CIS Controls v8.1.
+**Control catalogs** (per-control chunking, exact-ID retrieval): NIST CSF 2.1, NIST SP 800-53 Rev. 5, **SP 800-53A Rev. 5** + **SP 800-171A Rev. 3** (assessment procedures — power the advisory auditor), SP 800-171 Rev. 3, SP 800-218 (SSDF), CIS Controls v8.1.
 
 **Process / reference** (generic chunking): NIST SP 800-37 r2 (RMF), 800-30 r1, 800-61 r3, IR 7298 r3 (glossary), CISA Zero Trust Maturity Model v2, MITRE ATT&CK Enterprise.
 
