@@ -8,10 +8,11 @@
 ![Built with](https://img.shields.io/badge/built%20with-LangGraph%20%7C%20LangChain%20%7C%20Streamlit%20%7C%20OpenAI-orange)
 <!-- After Streamlit Cloud deploy: [![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://YOUR-APP-URL.streamlit.app) -->
 
-A local Streamlit app with two modes you drive by talking to it:
+A local Streamlit app with three ways to audit, all driven by talking to it:
 
+- **System auditing** (technical) — say what to scan (`audit ~/myrepo`, `scan https://example.com`, `audit aws:prod`, `image:nginx:1.21`, `audit this machine`) or attach files. The agent plans the scope, runs the right tools, and returns a **control-coverage assessment** — not just a findings list — ranked by risk and tied to framework controls.
+- **Advisory audit** (organizational) — ask the agent to assess the *process* controls scanners can't test (`assess our incident response process`, `interview questions for vendor risk management`, `gap analysis for our access-review policy`). It returns a RAG-grounded auditor's worksheet: applicable controls, assessment objective, interview questions, evidence to request, and common gaps — cited.
 - **Compliance Q&A** — cited answers grounded in an indexed framework corpus. Hybrid BM25 + vector retrieval routes exact control-ID queries (`AC-2`, `A01:2025`, `API1:2023`) straight to the matching control.
-- **System auditing** — say what to scan (`audit ~/myrepo`, `scan https://example.com`, `audit aws:prod`, `image:nginx:1.21`, `audit this machine`) or attach files. The agent plans the scope, runs the right tools, and returns a **control-coverage assessment** — not just a findings list — ranked by risk and tied to framework controls.
 
 Unlike a bare scanner, it assesses controls the way an assessor does: against a full **NIST SP 800-53B baseline** (Low / Moderate / High — the authoritative 149 / 287 / 370-control sets imported from NIST OSCAL), it reports what passed, what failed, and — honestly — what went **unassessed** because no artifact exercised it, with a coverage percentage. Risk is tuned to your system's internet exposure and data sensitivity; findings split into **deterministic** (scanner/heuristic) vs **AI-assisted** evidence; dispositioned findings (accepted-risk / false-positive) move to an auditable **register**; and every run exports as OSCAL Assessment Results + POA&M with severity-based remediation SLAs.
 

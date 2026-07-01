@@ -37,6 +37,33 @@ _LOCAL_HOST_RE = re.compile(
 )
 _SSH_HOST_RE = re.compile(r"^[\w.-]+@[\w.-]+$")
 
+# Advisory-audit intent: the user wants help assessing *organizational / process*
+# controls (examined + interviewed, not scanned). Requires both an assessment cue
+# and an organizational/process signal so ordinary compliance questions ("what is
+# AC-2?") aren't hijacked into the advisory worksheet.
+_ADVISORY_CUE_RE = re.compile(
+    r"\b(advisory audit|assess(?:ing|ment)?|audit|review|evaluate|readiness|"
+    r"interview questions?|questionnaire|checklist|gap analysis)\b",
+    re.IGNORECASE,
+)
+_ORG_CONTROL_RE = re.compile(
+    r"\b(organi[sz]ational|process control|governance|policy|policies|program|"
+    r"personnel|onboarding|offboarding|training|awareness|vendor|third[- ]party|"
+    r"supply chain|incident response|business continuity|disaster recovery|"
+    r"contingency|physical security|risk management|access review|"
+    r"non[- ]?technical|manual control)\b",
+    re.IGNORECASE,
+)
+
+
+def is_advisory_request(text: str) -> bool:
+    """True if the message asks for an advisory assessment of organizational /
+    process controls (routes to the RAG advisory worksheet rather than a scan or
+    a plain compliance answer)."""
+    if not text:
+        return False
+    return bool(_ADVISORY_CUE_RE.search(text) and _ORG_CONTROL_RE.search(text))
+
 
 def _classify_path(path: str) -> Artifact | None:
     # Filesystem targets are gated so a shared/hosted deployment can't be used to

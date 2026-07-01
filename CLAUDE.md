@@ -85,6 +85,7 @@ pytest tests/test_audit_config.py::test_sshd_heuristics_flag_root_login_and_pass
 
 ### `tools/`
 - `compliance_qa.py` — vector retrieval + LLM synthesis with citations. Exposes both `answer_compliance_question()` (blocking) and `stream_compliance_answer()` (yields token chunks for `st.write_stream`). Synthesis runs `synthesis_model` (gpt-5.5) at `settings.synthesis_reasoning_effort` (default `"low"`) — grounded citation from supplied excerpts doesn't need heavy reasoning, and low effort sharply cuts time-to-first-token.
+- `control_advisor.py` — the **advisory-audit** path (a second *way to audit*). Organizational/process controls (governance, personnel, awareness training, incident-response *process*, vendor risk, physical security, contingency) are examined + interviewed, not scanned. `advise_controls(topic, frameworks)` runs RAG over the corpus and returns a structured `ControlAdvisory` (applicable controls, assessment objective, interview questions, evidence to request, common gaps, citations) at `synthesis_model` (gpt-5.5); `render_advisory_markdown` renders the worksheet. Routed from chat when `intake.is_advisory_request(text)` matches (an assessment cue + an organizational/process signal) — takes priority over follow-up/Q&A. Fixture-tested (`tests/test_control_advisor.py`).
 - `framework_summary.py` — pure LCEL pipeline (no `MultiQueryRetriever` or `load_summarize_chain` — those legacy umbrella imports were removed)
 - `audit_text.py` / `audit_policy_pdf.py` — LLM with retrieval context
 - `audit_logs.py` — deterministic heuristics + LLM. Heuristics detect brute-force (≥5 failed logins/IP), successful login from a brute-forcing IP (critical, AC-7 compromise signal), direct root login, sudo without an audit trail (AU-2), web-attack signatures in access logs (SQLi/XSS/path-traversal/command-injection → SI-10 / AC-3), and log-tampering / anti-forensics (AU-9). LLM analysis layered on top, de-duped by title.
@@ -139,6 +140,7 @@ At startup `app.py` calls `retriever.warm_cache()` behind `@st.cache_resource`, 
 
 Targets come from the sidebar (`_build_artifacts()`) **or** from the chat message itself via `intake.parse_targets(prompt)` — so the user can type `audit ~/repo` / `scan https://x` / `audit this machine`. Routing per message:
 - **Audit** (sidebar or chat-detected targets present): runs the graph.
+- **Advisory audit** (no targets, `intake.is_advisory_request(prompt)` matches — an assessment cue + an organizational/process signal): `control_advisor.advise_controls()` returns a RAG-grounded worksheet for the process/organizational controls the scanners can't test. Checked *before* follow-up/Q&A.
 - **Follow-up** (no targets, but `st.session_state["last_audit"]` holds the previous report): `stream_followup_answer(question, report_md)` answers grounded in the report + retrieved framework excerpts.
 - **Compliance** (no targets, no prior audit): `stream_compliance_answer()`.
 

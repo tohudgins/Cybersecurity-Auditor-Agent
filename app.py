@@ -24,7 +24,7 @@ from auditor import suppressions as audit_suppressions  # noqa: E402
 from auditor.agents.graph import AUDITOR_GRAPH  # noqa: E402
 from auditor.diff import serialize_findings, target_key  # noqa: E402
 from auditor.ingest.pdf_loader import FRAMEWORK_NAMES  # noqa: E402
-from auditor.intake import parse_targets  # noqa: E402
+from auditor.intake import is_advisory_request, parse_targets  # noqa: E402
 from auditor.models import Artifact, AuditScope  # noqa: E402
 from auditor.oscal.exporter import to_oscal_assessment_results, to_oscal_poam  # noqa: E402
 from auditor.retrieval.retriever import warm_cache  # noqa: E402
@@ -32,6 +32,10 @@ from auditor.tools.audit_policy_pdf import extract_pdf_text  # noqa: E402
 from auditor.tools.compliance_qa import (  # noqa: E402
     stream_compliance_answer,
     stream_followup_answer,
+)
+from auditor.tools.control_advisor import (  # noqa: E402
+    advise_controls,
+    render_advisory_markdown,
 )
 
 # ---- Page setup ------------------------------------------------------------
@@ -1082,11 +1086,18 @@ if prompt:
             )
 
     with st.chat_message("assistant"):
-        # ── No target → follow-up on the last audit, else compliance Q&A ──
+        # ── No target → advisory audit / follow-up / compliance Q&A ───────
         if not artifacts:
             last_audit = st.session_state.get("last_audit")
             try:
-                if last_audit and last_audit.get("report"):
+                if is_advisory_request(prompt):
+                    # Organizational/process controls: examined + interviewed, not
+                    # scanned. Produce a RAG-grounded auditor's worksheet.
+                    with st.spinner("Assembling advisory assessment…"):
+                        advisory = advise_controls(prompt, target_frameworks or None)
+                    answer = render_advisory_markdown(advisory)
+                    st.markdown(_render_markdown_with_pills(answer), unsafe_allow_html=True)
+                elif last_audit and last_audit.get("report"):
                     answer = st.write_stream(
                         stream_followup_answer(prompt, last_audit["report"], target_frameworks or None)
                     )
