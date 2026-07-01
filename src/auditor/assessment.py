@@ -21,6 +21,7 @@ artifact covered them — is what distinguishes an audit from a scan dump.
 """
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 
 from auditor.enrichment.catalog import (
@@ -246,6 +247,55 @@ def assess_controls(
 
     summary = _summarize(label, assessments)
     return assessments, summary
+
+
+_VERDICT_ID_RE = re.compile(r"\b([A-Z]{2}-\d{1,3}(?:\(\d+\))?)\b")
+_VERDICT_STATUS = {"satisfied", "not-satisfied", "partial", "not-assessed"}
+
+
+def merge_interview_verdicts(
+    assessments: list[ControlAssessment],
+    coverage: CoverageSummary,
+    verdicts,
+) -> tuple[list[ControlAssessment], CoverageSummary]:
+    """Fold advisory **interview** verdicts into a technical assessment, unifying
+    the two ways to audit into one control-coverage picture.
+
+    For each verdict (from :class:`OrganizationalAssessment`) that resolves to a
+    NIST 800-53 control ID: if that control was ``not-assessed`` by the scanners,
+    it takes the interview verdict (method ``interview``); if the scanners already
+    assessed it (``test``/``examine``), the technical verdict stands (it exercised
+    the control directly). Controls the interview raises that weren't in scope are
+    surfaced too. Coverage is recomputed. Non-NIST verdicts (e.g. SOC 2 CC6.1) are
+    left for a NIST-anchored coverage to ignore.
+    """
+    by_id: dict[str, ControlAssessment] = {a.control_id: a for a in assessments}
+    for v in verdicts or []:
+        status = getattr(v, "status", None)
+        if status not in _VERDICT_STATUS or status == "not-assessed":
+            continue
+        m = _VERDICT_ID_RE.search(getattr(v, "control", "") or "")
+        if not m:
+            continue
+        cid = m.group(1)
+        rationale = f"Interview/examine: {getattr(v, 'rationale', '')}".strip()
+        existing = by_id.get(cid)
+        if existing is None:
+            by_id[cid] = ControlAssessment(
+                control_id=cid,
+                title=getattr(v, "title", "") or control_title(cid),
+                status=status,  # type: ignore[arg-type]
+                method="interview",
+                rationale=rationale,
+            )
+        elif existing.status == "not-assessed":
+            existing.status = status  # type: ignore[assignment]
+            existing.method = "interview"
+            existing.rationale = rationale
+        # else: scanner already assessed this control — its verdict stands.
+
+    merged = sorted(by_id.values(), key=lambda a: a.control_id)
+    return merged, _summarize(coverage.baseline, merged)
 
 
 def _summarize(baseline: str, assessments: list[ControlAssessment]) -> CoverageSummary:

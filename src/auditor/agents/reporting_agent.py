@@ -18,6 +18,7 @@ from auditor.models import (
     is_deterministic_source,
 )
 from auditor.prompts.reporting import EXECUTIVE_SUMMARY_PROMPT
+from auditor.scope import assess_scope_coverage
 
 _SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
 _SEVERITY_BADGE = {
@@ -92,6 +93,50 @@ _STATUS_LABEL = {
     "not-applicable": "Not Applicable",
     "not-assessed": "Not Assessed",
 }
+
+
+def _render_system_profile(scope, scope_coverage) -> str:
+    """System Profile (SSP-lite) + asset-level scope completeness. Rendered only
+    when the engagement declared a system description or an asset inventory."""
+    if scope is None:
+        return ""
+    has_profile = any([scope.description, scope.owner, scope.authorization_boundary, scope.assets])
+    if not has_profile:
+        return ""
+
+    lines = ["## System Profile & Scope\n"]
+    if scope.system_name:
+        lines.append(f"- **System:** {scope.system_name}")
+    if scope.owner:
+        lines.append(f"- **Owner:** {scope.owner}")
+    if scope.description:
+        lines.append(f"- **Description:** {scope.description}")
+    if scope.data_classification:
+        lines.append(f"- **Data classification:** {scope.data_classification}")
+    if scope.internet_facing is not None:
+        lines.append(f"- **Internet-facing:** {'yes' if scope.internet_facing else 'no'}")
+    if scope.authorization_boundary:
+        lines.append(f"- **Authorization boundary:** {scope.authorization_boundary}")
+
+    if scope_coverage and scope_coverage.total:
+        sc = scope_coverage
+        lines.append(
+            f"\n**Scope completeness:** {sc.assessed} of {sc.total} in-scope assets assessed "
+            f"({sc.coverage_pct:.0f}%)."
+        )
+        lines.append("\n| Asset | Type | Assessed | Evidence |")
+        lines.append("|---|---|---|---|")
+        for ac in sc.assets:
+            mark = "✅ yes" if ac.assessed else "❌ **no — gap**"
+            ev = f"`{ac.covered_by}`" if ac.covered_by else "—"
+            lines.append(f"| {ac.asset.name} | {ac.asset.kind} | {mark} | {ev} |")
+        gaps = [ac for ac in sc.assets if not ac.assessed]
+        if gaps:
+            lines.append(
+                f"\n_⚠️ {len(gaps)} in-scope asset(s) had no artifact assessing them — the audit "
+                "does not cover the full declared boundary. Supply targets for these to close scope._"
+            )
+    return "\n".join(lines) + "\n"
 
 
 def _render_coverage(coverage: CoverageSummary) -> str:
@@ -366,6 +411,8 @@ def _build_report(
     artifact_kinds: list[str] | None = None,
     suppressed_findings: list[dict] | None = None,
     fast_mode: bool = False,
+    scope=None,
+    scope_coverage=None,
 ) -> str:
     sorted_findings = sorted(
         findings,
@@ -405,6 +452,8 @@ def _build_report(
         diff = diff_findings(previous_findings, sorted_findings, previous_run_at)
         remediation_md = render_remediation_section(diff) + "\n"
 
+    profile_md = _render_system_profile(scope, scope_coverage)
+    profile_md = profile_md + "\n" if profile_md else ""
     coverage_md = _render_coverage(coverage) + "\n" if coverage else ""
     assessment_md = _render_assessment_detail(assessments) + "\n" if assessments else ""
     limitations_md = (
@@ -425,6 +474,7 @@ def _build_report(
         f"{plan_md}"
         f"{recommendations_md}"
         f"{remediation_md}"
+        f"{profile_md}"
         f"{coverage_md}"
         f"{assessment_md}"
         f"{limitations_md}"
@@ -447,17 +497,20 @@ def reporting_node(state: AuditorState) -> dict:
     previous_run_at = state.get("previous_run_at")
     plan_notes = state.get("plan_notes")
     recommendations = state.get("recommendations")
-    artifact_kinds = [a.kind for a in (state.get("artifacts") or [])]
+    artifacts = state.get("artifacts") or []
+    artifact_kinds = [a.kind for a in artifacts]
     suppressed_findings = state.get("suppressed_findings")
     fast_mode = state.get("fast_mode")
     if fast_mode is None:
         fast_mode = settings.fast_mode
+    scope = state.get("scope")
+    scope_coverage = assess_scope_coverage(scope, artifacts) if scope else None
     report = _build_report(
         findings, frameworks, assessments, coverage,
         previous_findings=previous_findings, previous_run_at=previous_run_at,
         plan_notes=plan_notes, recommendations=recommendations,
         artifact_kinds=artifact_kinds, suppressed_findings=suppressed_findings,
-        fast_mode=fast_mode,
+        fast_mode=fast_mode, scope=scope, scope_coverage=scope_coverage,
     )
     return {
         "final_report": report,

@@ -29,7 +29,7 @@ from auditor.intake import (  # noqa: E402
     looks_like_responses,
     parse_targets,
 )
-from auditor.models import Artifact, AuditScope  # noqa: E402
+from auditor.models import Artifact, Asset, AuditScope  # noqa: E402
 from auditor.oscal.exporter import to_oscal_assessment_results, to_oscal_poam  # noqa: E402
 from auditor.retrieval.retriever import warm_cache  # noqa: E402
 from auditor.tools.audit_policy_pdf import extract_pdf_text  # noqa: E402
@@ -732,6 +732,21 @@ with st.sidebar:
         index=0,
         help="Sensitive classes raise risk on confidentiality controls (e.g. SC-28, IA-5).",
     )
+    with st.expander("System profile (SSP) — optional"):
+        system_name = st.text_input("System name", value="", placeholder="e.g. Payments Platform")
+        system_owner = st.text_input("Owner", value="", placeholder="System / authorizing owner")
+        system_desc = st.text_area("Description", value="", height=60, placeholder="What the system is / does")
+        auth_boundary = st.text_area(
+            "Authorization boundary", value="", height=60,
+            placeholder="What's in / out of scope",
+        )
+        assets_text = st.text_area(
+            "Asset inventory", value="", height=90,
+            placeholder="One asset per line:  name | kind | description\n"
+            "e.g.  payments-api | codebase | Payment service repo",
+            help="Kinds: host / codebase / cloud_account / image_ref / target_url / config / "
+            "database / network. Drives the report's scope-completeness check.",
+        )
     fast_mode = st.checkbox(
         "⚡ Fast mode (deterministic only)",
         value=False,
@@ -813,6 +828,52 @@ def _classify_upload(filename: str) -> str:
     if name.endswith(".log") or "log" in name:
         return "log"
     return "config"
+
+
+def _unified_coverage_update(assessment) -> str:
+    """Fold an advisory (interview) assessment's verdicts into the last technical
+    audit's coverage — unifying the two ways to audit into one control-coverage
+    picture. Returns a Markdown delta note (empty if there's no prior audit or
+    nothing new was covered)."""
+    la = st.session_state.get("last_audit")
+    if not assessment or not la or not la.get("coverage") or not la.get("assessments"):
+        return ""
+    from auditor.assessment import merge_interview_verdicts
+
+    before = la["coverage"]
+    merged_assessments, merged_coverage = merge_interview_verdicts(
+        la["assessments"], before, assessment.verdicts
+    )
+    la["assessments"], la["coverage"] = merged_assessments, merged_coverage
+    st.session_state["last_audit"] = la
+
+    delta = merged_coverage.assessed - before.assessed
+    if delta <= 0:
+        return ""
+    return (
+        "\n\n---\n### 🔗 Unified Control Coverage (technical + interview)\n"
+        f"Folded these interview verdicts into your last audit's coverage: "
+        f"**{before.assessed} → {merged_coverage.assessed} of {merged_coverage.total_controls} "
+        f"controls assessed ({merged_coverage.coverage_pct:.0f}%)** — {delta} process control(s) "
+        "moved from *not-assessed* to assessed via interview/examine.\n"
+    )
+
+
+def _parse_assets(text: str) -> list[Asset]:
+    """Parse the asset-inventory textarea: one `name | kind | description` per line."""
+    assets: list[Asset] = []
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = [p.strip() for p in line.split("|")]
+        name = parts[0]
+        if not name:
+            continue
+        kind = parts[1] if len(parts) > 1 and parts[1] else "component"
+        desc = parts[2] if len(parts) > 2 else ""
+        assets.append(Asset(name=name, kind=kind, description=desc))
+    return assets
 
 
 def _build_artifacts() -> list[Artifact]:
@@ -1105,6 +1166,7 @@ if prompt:
                             pending_advisory, prompt, target_frameworks or None
                         )
                     answer = render_organizational_assessment_markdown(assessment)
+                    answer += _unified_coverage_update(assessment)
                     st.markdown(_render_markdown_with_pills(answer), unsafe_allow_html=True)
                 elif is_advisory_request(prompt):
                     # Organizational/process controls: examined + interviewed, not
@@ -1116,6 +1178,7 @@ if prompt:
                                 prompt, prompt, target_frameworks or None
                             )
                         answer = render_organizational_assessment_markdown(assessment)
+                        answer += _unified_coverage_update(assessment)
                     else:
                         with st.spinner("Assembling advisory worksheet…"):
                             advisory = advise_controls(prompt, target_frameworks or None)
@@ -1152,6 +1215,11 @@ if prompt:
                 "target_frameworks": target_frameworks,
                 "artifacts": artifacts,
                 "scope": AuditScope(
+                    system_name=system_name or "Target system",
+                    owner=system_owner,
+                    description=system_desc,
+                    authorization_boundary=auth_boundary,
+                    assets=_parse_assets(assets_text),
                     baseline=selected_baseline,
                     internet_facing=internet_facing or None,
                     data_classification=(
@@ -1198,8 +1266,13 @@ if prompt:
             st.markdown(_render_markdown_with_pills(answer), unsafe_allow_html=True)
             st.session_state.messages.append(AIMessage(content=answer))
             # Remember this report so the next plain message is answered as a
-            # follow-up ("explain finding 3", "how do I fix the SQLi?").
-            st.session_state["last_audit"] = {"report": answer}
+            # follow-up ("explain finding 3", "how do I fix the SQLi?"), and so an
+            # advisory assessment can merge its interview verdicts into coverage.
+            st.session_state["last_audit"] = {
+                "report": answer,
+                "assessments": assessments,
+                "coverage": coverage,
+            }
 
             if findings:
                 oscal_doc = to_oscal_assessment_results(

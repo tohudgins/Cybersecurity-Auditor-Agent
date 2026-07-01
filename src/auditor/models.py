@@ -130,10 +130,36 @@ class ControlAssessment(BaseModel):
     )
 
 
+class Asset(BaseModel):
+    """A component inside the system's authorization boundary (an SSP asset)."""
+
+    name: str = Field(..., description="Asset name/identifier, e.g. 'prod-web-01', 'payments-api repo'.")
+    kind: str = Field(
+        default="component",
+        description="Asset type — ideally an audit artifact kind (host/codebase/cloud_account/"
+        "image_ref/target_url/config) or a free label (database/network/appliance/…).",
+    )
+    description: str = Field(default="", description="What the asset is / its role.")
+
+
 class AuditScope(BaseModel):
-    """The engagement scope that drives coverage and risk context."""
+    """The engagement scope (a lightweight SSP) that drives coverage and risk context.
+
+    Beyond selecting a control baseline, a real engagement defines the *system*:
+    its boundary, the assets inside it, and the data it handles. The asset
+    inventory lets the report show **scope completeness** — which in-scope assets
+    an artifact actually assessed, and which went unassessed.
+    """
 
     system_name: str = Field(default="Target system", description="Name/label of the system under assessment.")
+    description: str = Field(default="", description="Short description of the system and its purpose.")
+    owner: str = Field(default="", description="System/authorizing owner (for the report header).")
+    authorization_boundary: str = Field(
+        default="", description="Free-text description of what's in/out of the authorization boundary."
+    )
+    assets: list[Asset] = Field(
+        default_factory=list, description="Inventory of components inside the boundary."
+    )
     baseline: str = Field(
         default="auditor-curated",
         description="Control baseline selected for the engagement (e.g. 'auditor-curated', 'moderate').",
