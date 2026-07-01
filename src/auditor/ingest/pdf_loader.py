@@ -35,10 +35,22 @@ FRAMEWORK_NAMES: dict[str, str] = {
     "NIST.CSWP.30.pdf": "NIST Cybersecurity Framework 2.1",
     "NIST.SP.800-218.pdf": "NIST SP 800-218 (SSDF)",
     # OWASP ASVS 5.0 is sourced from GitHub markdown (see web_fetcher.py).
+    # Regulatory (per-section chunking)
+    "HIPAA-45-CFR-164.pdf": "HIPAA Security Rule (45 CFR Part 164)",
+    # PCI DSS is PCI-SSC-licensed — user-supplied, gitignored (not redistributed).
+    "PCI-DSS-v4_0_1.pdf": "PCI DSS v4.0.1",
     # Process / narrative documents (generic chunking)
     "nistspecialpublication800-30r1.pdf": "NIST SP 800-30 Rev. 1",
     "NIST.SP.800-37r2.pdf": "NIST SP 800-37 Rev. 2 (RMF)",
     "NIST.SP.800-61r3.pdf": "NIST SP 800-61 Rev. 3 (Incident Response)",
+    "NIST.SP.800-63b.pdf": "NIST SP 800-63B (Digital Identity / Authentication)",
+    "NIST.SP.800-207.pdf": "NIST SP 800-207 (Zero Trust Architecture)",
+    "NIST.SP.800-190.pdf": "NIST SP 800-190 (Application Container Security)",
+    "NIST.SP.800-40r4.pdf": "NIST SP 800-40 Rev. 4 (Enterprise Patch Management)",
+    "NIST.SP.800-161r1.pdf": "NIST SP 800-161 Rev. 1 (Supply Chain Risk Management)",
+    "NIST.SP.800-137.pdf": "NIST SP 800-137 (Information Security Continuous Monitoring)",
+    "NIST.SP.800-92.pdf": "NIST SP 800-92 (Log Management)",
+    "NIST.SP.800-34r1.pdf": "NIST SP 800-34 Rev. 1 (Contingency Planning)",
     "zero_trust_maturity_model_v2_508.pdf": "CISA Zero Trust Maturity Model v2",
     "NIST.IR.7298r3.pdf": "NIST IR 7298 Rev. 3 (Glossary)",
     # Adversary reference
@@ -63,6 +75,12 @@ _CONTROL_PATTERNS: dict[str, re.Pattern[str]] = {
     "NIST Cybersecurity Framework 2.1": re.compile(r"^\s*([A-Z]{2}\.[A-Z]{2}-\d{2})\b", re.MULTILINE),
     "NIST SP 800-218 (SSDF)": re.compile(r"^\s*((?:PO|PS|PW|RV)\.\d+\.\d+)\b", re.MULTILINE),
     "CIS Controls v8.1": re.compile(r"^\s*(\d{1,2}\.\d{1,2})\s+[A-Z]", re.MULTILINE),
+    # HIPAA Security/Privacy Rule sections, e.g. "§ 164.308" / "164.312".
+    "HIPAA Security Rule (45 CFR Part 164)": re.compile(
+        r"^\s*§?\s*(164\.\d{3})\b", re.MULTILINE
+    ),
+    # PCI DSS requirements, e.g. "8.3.1" (sub-requirement) or "8.3".
+    "PCI DSS v4.0.1": re.compile(r"^\s*(\d{1,2}\.\d{1,2}(?:\.\d{1,2})?)\b", re.MULTILINE),
     # ASVS 5.0 markdown uses table rows with bold IDs like **1.2.1** and
     # gets generic chapter-level chunking instead, so no per-control regex.
     # OWASP Top 10 markdowns lead each risk with a level-1 heading like

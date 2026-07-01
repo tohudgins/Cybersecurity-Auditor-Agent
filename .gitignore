@@ -74,3 +74,6 @@ data/web/
 
 # Local notes
 notes.txt
+
+# PCI DSS is PCI-SSC-licensed — user-supplied, not redistributed
+data/PCI-DSS-*.pdf

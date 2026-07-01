@@ -17,10 +17,10 @@ import re
 # Framework whose own text is NOT indexed → display label. Detection is
 # deliberately conservative (word-boundaried acronyms/names).
 _UNCOVERED: dict[str, re.Pattern[str]] = {
-    "PCI DSS": re.compile(r"\bPCI(?:[-\s]?DSS)?\b", re.IGNORECASE),
+    # PCI DSS v4.0.1 and HIPAA 45 CFR 164 ARE now indexed — omitted on purpose.
     "SOC 2": re.compile(r"\bSOC[-\s]?2\b", re.IGNORECASE),
     "ISO/IEC 27001/27002": re.compile(r"\bISO(?:/IEC)?[-\s]?2700[12]\b", re.IGNORECASE),
-    "HIPAA": re.compile(r"\bHIPAA\b", re.IGNORECASE),
+    # HIPAA Security Rule (45 CFR 164) IS now indexed — omitted here on purpose.
     "GDPR": re.compile(r"\bGDPR\b", re.IGNORECASE),
     "CMMC": re.compile(r"\bCMMC\b", re.IGNORECASE),
     "FedRAMP": re.compile(r"\bFedRAMP\b", re.IGNORECASE),
