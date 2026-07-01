@@ -193,7 +193,7 @@ Stated plainly, because a GRC tool that overstates its rigor is worse than one t
 | [Semgrep](https://semgrep.dev/) | `codebase` (multi-language SAST) | `pipx install semgrep` (isolate it — its pins conflict with the venv) |
 | [Bandit](https://bandit.readthedocs.io/) | `codebase` (Python SAST) | `pip install bandit` |
 | [gitleaks](https://github.com/gitleaks/gitleaks) | `codebase` (secrets) | `brew install gitleaks` — regex fallback if missing |
-| [Checkov](https://www.checkov.io/) | `config` (Terraform / K8s) | `pip install checkov` |
+| [Checkov](https://www.checkov.io/) | `config` (Terraform / K8s) | `pipx install checkov` (isolate it — its `boto3` pin conflicts with the venv) |
 | [hadolint](https://github.com/hadolint/hadolint) | `config` (Dockerfile) | `brew install hadolint` — regex fallback if missing |
 | [Prowler](https://github.com/prowler-cloud/prowler) | `cloud_account` (live CSPM) | `pipx install prowler --python python3.12` (isolate it — a plain `pip install` into the venv pins pydantic v1 and breaks the stack) |
 | [Nuclei](https://github.com/projectdiscovery/nuclei) | `target_url` (live DAST) | `brew install nuclei` |

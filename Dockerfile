@@ -4,8 +4,8 @@ ARG GITLEAKS_VERSION=8.21.2
 ARG HADOLINT_VERSION=2.12.0
 
 # Install Trivy (CVE + IaC misconfig scanner) + gitleaks (secrets) + hadolint
-# (Dockerfile linter) in one layer. Semgrep (multi-language SAST) is installed via
-# pip below as part of the `scanners` extra.
+# (Dockerfile linter) in one layer. Semgrep + Checkov are installed isolated via
+# pipx further down (their pins conflict with the core stack, same as on the host).
 # Trivy comes from Aqua Security's official Debian repo.
 # gitleaks and hadolint ship as release binaries, downloaded for the host architecture.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -46,6 +46,15 @@ COPY pyproject.toml README.md ./
 COPY src/ ./src/
 
 RUN pip install --no-cache-dir -e ".[scanners]"
+
+# Heavy Python scanners (Semgrep multi-language SAST, Checkov IaC) are installed
+# isolated via pipx so their dependency pins (opentelemetry/click, boto3) don't
+# conflict with the app's core stack (chromadb/langchain) — exactly as on the
+# host. They're only ever invoked as CLIs on PATH.
+ENV PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin
+RUN pip install --no-cache-dir pipx \
+    && pipx install semgrep \
+    && pipx install checkov
 
 COPY app.py ./
 COPY data/ ./data/

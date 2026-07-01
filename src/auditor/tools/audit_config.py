@@ -321,7 +321,7 @@ def _checkov_missing_hint() -> Finding:
         title="Checkov not installed — IaC scan falling back to regex heuristics",
         severity="info",
         evidence="`checkov` binary is not on PATH; using lightweight regex checks instead.",
-        recommendation="Install Checkov for 1000+ real IaC rules: `pip install checkov`",
+        recommendation="Install Checkov for 1000+ real IaC rules (isolate it): `pipx install checkov`",
     )
 
 

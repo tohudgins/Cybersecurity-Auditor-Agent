@@ -39,13 +39,14 @@ dev = [
     "pre-commit>=3.7.0",
     "ruff>=0.6.0",
 ]
-# Lightweight, import-clean scanners safe to share this venv.
-# Semgrep is intentionally NOT here: it's a heavy app whose pins (opentelemetry,
-# click) conflict with the core stack — install it isolated via `pipx install
-# semgrep`. Same for Prowler (`pipx install prowler --python python3.12`). Both
-# are only ever invoked as CLIs via subprocess, so they don't belong in the venv.
+# Only bandit lives here — it's tiny and import-clean. The other Python scanners
+# are heavy apps whose pins conflict with the core stack (Semgrep → opentelemetry
+# /click; Checkov → boto3==x.y.z; Prowler → pydantic v1). They are only ever
+# invoked as CLIs via subprocess, so they're pipx-isolated, NOT venv deps:
+#   pipx install semgrep
+#   pipx install checkov
+#   pipx install prowler --python python3.12
 scanners = [
-    "checkov>=3.0.0",
     "bandit>=1.7.0",
 ]
 
